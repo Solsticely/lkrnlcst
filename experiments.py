@@ -187,8 +187,8 @@ def experiment_find_control_points():
 if __name__ == "__main__":
     # experiment_find_best_exponent_for_simple_peak_finding()
     # experiment_locate_low_frequency()
-    # experiment_find_control_points()
-    experiment_locate_tbc_with_zxing()
+    experiment_find_control_points()
+    # experiment_locate_tbc_with_zxing()
     pass
 
 

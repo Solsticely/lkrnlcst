@@ -46,43 +46,54 @@ class Profile:
         # represents how long a certain frequency should last. is modified more.
         # 1 full cycle at the minimum frequency
         self.MIN_FREQTIME = 1/self.TOTAL_MINHZ
+
         # 37.5 milliseconds minimum +- wow & flutter error
-        self.MIN_FREQTIME = max((1+self.TBC_ERR_AMT)*.0375, self.MIN_FREQTIME)
-        # rounded up to a whole # of windows, for convenience's sake (and for
-        # ability to test what happens when wow & flutter makes windows fall
-        # between chunks)
-        self.MIN_FREQTIME = math.ceil(self.MIN_FREQTIME / (WIN_SIZE/HZ))*(WIN_SIZE/HZ)
+        # self.MIN_FREQTIME = max((1+self.TBC_ERR_AMT)*.0375, self.MIN_FREQTIME)
+
+        # rounded up to a whole # of windows + a boundary of 1ms, for
+        # convenience's sake (and for ability to test what happens when wow &
+        # flutter makes windows fall between chunks)
+        self.MIN_FREQTIME = math.ceil(self.MIN_FREQTIME / (WIN_SIZE/HZ))*(WIN_SIZE/HZ) + 0.002
 
         # minimum DFT bin spacing when encoding
-        self.DFT_BIN_DELTA = 4
+        self.DFT_BIN_DELTA = 3
         self.DFT_BIN_DELTA_MULT = 0  # 0.05
         # actual spacing is calculated as:
         # last_freq * DELTA_MULT + index2freq(freq2index(last_freq) + DELTA)
         # and rounded to nearest bin during actual encoding & decoding
         # bin spacings are actually bin indexes for a window size of WIN_SIZE
+        from util import datasize2dftsize
+        self.dft_size = round(datasize2dftsize(self.MIN_FREQTIME * HZ))
         self.bin_spacings = self.get_spacings()
+        self.DFT_BIN_MULT = 12 * len(self.bin_spacings)
 
     def get_spacings(self):
-        from util import index2freq, a_freq2index, a_datasize2dftsize
-        dft_size = a_datasize2dftsize(WIN_SIZE)
+        from util import a_freq2index as a_hz2bin
+        win_size = round(self.MIN_FREQTIME * HZ)
+        # dft_size = self.dft_size
 
-        def increment_freq(freq):
-            return freq * self.DFT_BIN_DELTA_MULT + index2freq(a_freq2index(freq, WIN_SIZE, HZ)+self.DFT_BIN_DELTA, dft_size, HZ)
+        # def increment_freq(freq):
+        #     return freq * self.DFT_BIN_DELTA_MULT + bin2hz(a_hz2bin(freq, win_size, HZ)+self.DFT_BIN_DELTA, dft_size, HZ)
 
-        def increment_index(index):
-            return a_freq2index(increment_freq(index2freq(index, dft_size, HZ)), WIN_SIZE, HZ)
+        # def increment_index(index):
+        #     return a_hz2bin(increment_freq(bin2hz(index, dft_size, HZ)), win_size, HZ)
 
-        spacings = []
-        last_spacing = a_freq2index(self.MIN_AUDIOFREQ, WIN_SIZE, HZ)
-        max_bin = a_freq2index(self.MAX_AUDIOFREQ, WIN_SIZE, HZ)
+        # spacings = []
+        # last_spacing = a_hz2bin(self.MIN_AUDIOFREQ, win_size, HZ)
+        # max_bin = a_hz2bin(self.MAX_AUDIOFREQ, win_size, HZ)
 
-        while True:
-            next_spacing = increment_index(last_spacing)
-            next_spacing_rounded = round(next_spacing)
-            if next_spacing_rounded >= max_bin:
-                break
-            spacings.append(next_spacing_rounded)
-            last_spacing = next_spacing
+        # while True:
+        #     next_spacing = increment_index(last_spacing)
+        #     next_spacing_rounded = round(next_spacing)
+        #     if next_spacing_rounded >= max_bin:
+        #         break
+        #     spacings.append(next_spacing_rounded)
+        #     last_spacing = next_spacing
+        spacings = np.arange(
+            math.ceil(a_hz2bin(self.MIN_AUDIOFREQ, win_size, HZ)),
+            math.floor(a_hz2bin(self.MAX_AUDIOFREQ, win_size, HZ)),
+            round(self.DFT_BIN_DELTA)
+        )
 
         return spacings
 
