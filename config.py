@@ -65,7 +65,7 @@ class Profile:
         from util import dat2dftsz, bin2hz
         self.dft_size = round(dat2dftsz(self.MIN_FREQTIME * HZ))
         self.bin_spacings = self.get_spacings()
-        self.freq_spacings = np.array((bin2hz(i, self.dft_size, HZ) for i in self.bin_spacings), dtype=TY)
+        self.freq_spacings = np.array([bin2hz(i, self.dft_size, HZ) for i in self.bin_spacings], dtype=TY)
         self.DFT_BIN_MULT = 12 * len(self.bin_spacings)
 
     def get_spacings(self):
