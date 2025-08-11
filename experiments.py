@@ -40,12 +40,12 @@ def experiment_find_best_exponent_for_simple_peak_finding():
 
     hz = 44100
     wsize = hz // 50
-    targets = np.arange(C.P.TOTAL_MINHZ, C.P.TOTAL_MAXHZ, 4, dtype=np.float32)
+    targets = np.arange(C.P.TOTAL_MINHZ, C.P.TOTAL_MAXHZ, 4, dtype=C.TY)
     waveforms = [
-        U.afft(np.sin(np.arange(wsize, dtype=np.float32)*target/hz*np.pi*2))
+        U.afft(np.sin(np.arange(wsize, dtype=C.TY)*target/hz*np.pi*2))
         for target in tqdm(targets)
     ]
-    expnts = np.log2(np.linspace(2**1, 2**18, 400, dtype=np.float32))
+    expnts = np.log2(np.linspace(2**1, 2**18, 400, dtype=C.TY))
 
     best_expnts = []
     divnumbers = []
@@ -77,8 +77,32 @@ def experiment_find_best_exponent_for_simple_peak_finding():
     gauss(errors)
 
 
+def experiment_locate_low_frequency():
+    def low_pass_filter(data, freq, hz):
+        F = U.ifft(data)
+        F[U.freq2index(freq, len(data), hz) + 1:] = 0
+        return U.ttf(F, data.size)
+
+    file = U.WaveReader(C.AUD_IN_PATH, C.WIN_SIZE, "samples")
+    hz = file.hz
+    lowpass_file = U.WaveWriter("./lowpass.wav", 2, hz, np.int16)
+    approxi_file = U.WaveWriter("./approxi.wav", 2, hz, np.int16)
+
+    for chunk in file:
+        lowpass = low_pass_filter(chunk, C.P.TBC_FREQ*(1+C.P.TBC_ERR_AMT), hz)
+        lowpass_file.write(lowpass)
+        freq = U.find_peak_freq(lowpass, hz, C.P.TBC_FREQ)
+        approxi_file.write(np.sin(np.arange(C.WIN_SIZE)*(freq/hz*np.pi*2)))
+
+    file.close()
+    lowpass_file.close()
+    approxi_file.close()
+
+
 if __name__ == "__main__":
-    experiment_find_best_exponent_for_simple_peak_finding()
+    # experiment_find_best_exponent_for_simple_peak_finding()
+    experiment_locate_low_frequency()
+    pass
 
 
 
