@@ -30,6 +30,7 @@ def speed_warp(samples, speed):
 
 
 def time_base_correct(hz, file):
+    # TODO: make sure TBC also does amplitude normalisation!!!
     expected_freq = C.P.TBC_FREQ
     WIN_SIZE = C.WIN_SIZE
     # NOTE: keep in mind that the standard window roll is C.WIN_SIZE-C.WIN_ROFF

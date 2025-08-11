@@ -62,10 +62,13 @@ class Profile:
         # last_freq * DELTA_MULT + bin2hz(hz2bin(last_freq) + DELTA)
         # and rounded to nearest bin during actual encoding & decoding
         # bin spacings are actually bin indexes for a window size of WIN_SIZE
-        from util import dat2dftsz, bin2hz
+        from util import dat2dftsz, bin2hz, a_hz2bin
         self.dft_size = round(dat2dftsz(self.MIN_FREQTIME * HZ))
         self.bin_spacings = self.get_spacings()
+        self.bin_bounds = [round(a_hz2bin(self.MIN_AUDIOFREQ, self.MIN_FREQTIME*HZ, HZ))-2]+list((self.bin_spacings+np.roll(self.bin_spacings, 1))/2)[1:]+[round(a_hz2bin(self.TBC_LOW, self.MIN_FREQTIME*HZ, HZ))]
+        self.bin_bounds = [int(i) for i in self.bin_bounds]
         self.freq_spacings = np.array([bin2hz(i, self.dft_size, HZ) for i in self.bin_spacings], dtype=TY)
+        self.freq_bounds = [self.MIN_AUDIOFREQ]+(self.freq_spacings-np.roll(self.freq_spacings, 1))[1:]+[self.MAX_AUDIOFREQ]
         self.DFT_BIN_MULT = 12 * len(self.bin_spacings)
 
     def get_spacings(self):

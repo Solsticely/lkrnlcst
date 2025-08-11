@@ -161,27 +161,75 @@ def experiment_locate_tbc_with_zxing():
 
 
 def experiment_find_control_points():
+    def get_clock_curve(block, sliding_writer):
+
+        dft = np.abs(U.ifft(block))/8
+        band1 = np.sum(dft[C.P.bin_bounds[0]:C.P.bin_bounds[1]])
+        band2 = np.sum(dft[C.P.bin_bounds[1]:C.P.bin_bounds[2]])
+        # cmp = [1 if i > 0 else -1 for i in sw1-sw2]
+        # amp_file_1.write(sw1)
+        # amp_file_2.write(sw2)
+        return sliding_writer.write(band1 - band2)
+
     ROLL_SIZE = C.WIN_SIZE // 18
-    file = U.WaveReader(C.AUD_OUT_PATH, C.WIN_SIZE, "samples")
+    WIN_SIZE = round(math.ceil(C.P.MIN_FREQTIME * C.HZ))
+    buffer_flap_size = C.P.MIN_FREQTIME * C.HZ / 1.8
+    max_buffer_size = 4*buffer_flap_size
+    # min_block_distance = 1.9*buffer_flap_size
+
+    file = U.WaveReader(C.AUD_OUT_PATH, WIN_SIZE, "samples")
     hz = file.hz
-    file = U.SlidingReader(file, C.WIN_SIZE, ROLL_SIZE, False)
-    amp_file = U.WaveWriter("./amplitude.wav", 2, hz, np.int16)
+    file = U.SlidingReader(file, WIN_SIZE, ROLL_SIZE, True)
 
-    lp_freq = (C.P.freq_spacings[0]+C.P.freq_spacings[1])/2
-    hp_freq = C.P.MIN_AUDIOFREQ
-    for cl in file:
-        max_freq_base = U.hz2bin(C.P.TOTAL_MAXHZ, len(cl), hz)
-        min_freq_base = U.hz2bin(C.P.TOTAL_MINHZ, len(cl), hz)
-        max_freq_signal = U.hz2bin(lp_freq, len(cl), hz)
-        min_freq_signal = U.hz2bin(hp_freq, len(cl), hz)
-        fft = U.afft(cl)
-        amplitude = np.sum(fft[min_freq_signal:max_freq_signal])
-        amplitude /= max(np.sum(fft[min_freq_base:max_freq_base]),0.0001)
-        # amplitude = np.abs(signal.hilbert(chunk))
-        amp_file.write(amplitude * np.ones(ROLL_SIZE))
+    bit_file = U.WaveWriter("./binary_amp.wav", 2, hz, np.int16)
+    clock_writer = U.SlidingWriter(file.basic_mask, file.basic_mask_beginning, ROLL_SIZE, 1)
 
+    last_sign_change = 0
+    last_sign = None
+    buffer = np.zeros(WIN_SIZE, dtype=np.float32)
+    inx = WIN_SIZE
+    total_inx = 0
+    addition_inx = 0
+
+    for block in file:
+        buffer = np.append(buffer, block[:ROLL_SIZE])
+        
+
+        # free some memory!
+        amt_to_free = max(0, round(np.size(buffer) - max_buffer_size))
+        inx -= amt_to_free
+        last_sign_change -= amt_to_free
+        buffer = buffer[amt_to_free:]
+        print("SIGN CHANGED, index at = %.1fs, at = %.1fs, bsize = %dKiB (freed %d KiB)" % (inx/C.HZ, total_inx/C.HZ, len(buffer)*4/1024, amt_to_free*4/1024))
+
+        # get clock curve:
+        clock_block = get_clock_curve(block, clock_writer)
+
+        # find sign changes
+        if last_sign is None:
+            last_sign = clock_block[0] < 0
+
+        for sample in clock_block:
+            inx += 1
+            total_inx += 1
+
+            # TODO: use the same algorithm as in the demodulation zxing impl
+            # Sign changed!
+            if last_sign != (sample < 0):
+                # get chunk
+                middle = (last_sign_change + inx)/2
+                chunk = buffer[round(middle-buffer_flap_size):round(middle+buffer_flap_size)]
+                bit_file.write(chunk)
+                bit_file.write(np.zeros(WIN_SIZE * 4))
+
+                # reset sign
+                last_sign = sample < 0
+                last_sign_change = inx
+
+    # amp_file_1.close()
+    # amp_file_2.close()
+    bit_file.close()
     file.inner.close()
-    amp_file.close()
 
 
 if __name__ == "__main__":
