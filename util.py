@@ -27,7 +27,6 @@ def make_rolling_mask(window_size: int, offset_size: int):
     )
 
 
-# TODO: WARN: DEPRECATED!
 class ChunkEater:
     def __init__(self, iterator, default):
         self.iter = iterator.__iter__()
