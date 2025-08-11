@@ -10,6 +10,24 @@ def chunk(list, size, default=0):
     return out
 
 
+def make_rolling_mask(window_size: int, offset_size: int):
+    ramp_size = min(window_size - offset_size, offset_size)
+    plateau_size = window_size - ramp_size * 2
+    factor = ramp_size / (window_size - offset_size)
+    return (
+        np.concat((
+            np.linspace(0, 1, ramp_size, False, dtype=C.TY),
+            np.ones(plateau_size, dtype=C.TY),
+            np.linspace(1, 0, ramp_size, False, dtype=C.TY)
+        )) * factor,
+        np.concat((
+            np.linspace(1, 0, window_size - offset_size, False, dtype=C.TY),
+            np.ones(offset_size, dtype=C.TY)
+        ))
+    )
+
+
+# TODO: WARN: DEPRECATED!
 class ChunkEater:
     def __init__(self, iterator, default):
         self.iter = iterator.__iter__()
@@ -86,6 +104,38 @@ class WaveWriter:
     def close(self): self.file.close()
 
 
+class SlidingReader:
+    def __init__(self, chunks, window_size: int = C.WIN_SIZE, roll_size: int = C.WIN_SIZE - C.WIN_ROFF, pad: bool = True):
+        self.roll_size = roll_size
+        self.window_size = window_size
+        assert roll_size <= window_size, "Roll"
+        self.inner = chunks.__iter__()
+        self.samples = np.zeros(self.roll_size, dtype=C.TY)
+        self.is_finished = False
+        self.basic_mask, self.basic_mask_beginning = make_rolling_mask(self.window_size, self.roll_size)
+        self.pad = pad
+
+    def __next__(self):
+        if self.is_finished:
+            raise StopIteration()
+
+        self.samples = self.samples[self.roll_size:]
+        while len(self.samples) < self.window_size:
+            try:
+                self.samples = np.concat((self.samples, self.inner.__next__()))
+            except StopIteration:
+                self.is_finished = True
+                if self.pad:
+                    pad_size = self.window_size - len(self.samples)
+                    padding = np.zeros(pad_size, dtype=C.TY)
+                    self.samples = np.concat((self.samples, padding))
+                break
+
+        return self.samples[:self.window_size]
+
+    def __iter__(self): return self
+
+
 def get_hz(path):
     with WaveReader(path) as (hz, _wv):
         return hz
@@ -102,6 +152,7 @@ lerp = (lambda t, a, b: (b-a)*t+a)
 # curse you e731, e305 & e302
 def index2freq(index, dft_size, hz): return index * hz / (2*dft_size - 2)
 def freq2index(freq, data_size, hz): return round(freq * data_size / hz)
+def a_freq2index(freq, data_size, hz): return freq * data_size / hz
 def dftsize2datasize(sz): return 2*sz-2
 def datasize2dftsize(sz): return sz//2+1
 def a_datasize2dftsize(sz): return sz/2+1
@@ -150,4 +201,18 @@ def speed_adjust(data, speed):
         index += round(whole)
 
     return np.array(final)
+
+
+def bandpass(data, hz, low: None, high: None, data_is_dft=False):
+    if data_is_dft:
+        dat_size = dftsize2datasize(len(data))
+        dft = np.copy(data)
+    else:
+        dat_size = len(data)
+        dft = ifft(data)
+    low_bin = 0 if low is None else freq2index(low, dat_size, hz)
+    high_bin = len(dft) if high is None else freq2index(high, dat_size, hz)
+    dft[:low_bin+1] = 0
+    dft[high_bin:] = 0
+    return dft if data_is_dft else ttf(dft, dat_size)
 

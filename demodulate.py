@@ -18,13 +18,14 @@ def get_time_difference():
 
 
 def time_base_correct():
+    def iter_speed_adjust(chunks, speed):
+        for chunk in chunks:
+            yield U.speed_adjust(chunk, speed)
+
     roll_size = C.WIN_SIZE - C.WIN_ROFF
     rolling_speed = np.copy(C.WIN_MASK)
-    sample_history = np.zeros(roll_size)
     file = U.WaveReader(C.AUD_IN_PATH, C.WIN_SIZE, "samples")
     hz = file.hz
-    file = U.ChunkEater(file, np.zeros(C.WIN_SIZE))
-
     tbc_samples = []
     speeds = []
 
@@ -37,20 +38,15 @@ def time_base_correct():
     # comment next to them.
     hzmul = C.HZ / hz  # see NOTE 1
 
-    while not file.is_eof:
+    file = iter_speed_adjust(file, hzmul)
+    file = U.SlidingReader(file)
+
+    for samples in file:
         rolling_speed[:roll_size] = 0
         rolling_speed = np.roll(rolling_speed, -roll_size)
-        sample_history = sample_history[roll_size:]
-        while len(sample_history) < C.WIN_SIZE:
-            # see NOTE 1
-            new_samples = U.speed_adjust(file.next(), hzmul)
-            # new_samples = file.next()
-            sample_history = np.concat((sample_history, new_samples))
-
-        samples = sample_history[:C.WIN_SIZE]
 
         # see NOTE 1
-        tbc_wave = low_pass_filter(samples, C.P.TBC_FREQ*(1+C.P.TBC_ERR_AMT), C.HZ)
+        tbc_wave = U.bandpass(samples, C.HZ, C.P.TBC_LOW, C.P.TBC_HIGH, False)
         freq = U.find_peak_freq(tbc_wave, C.HZ, C.P.TBC_FREQ)
 
         speed = max(min(1+C.P.TBC_ERR_AMT, C.P.TBC_FREQ/freq), 1-C.P.TBC_ERR_AMT)
@@ -78,7 +74,7 @@ def time_base_correct():
     E.gauss(speeds)
     tbc_samples += [0]*(C.WIN_SIZE - len(tbc_samples) + 1)
     yield np.array(tbc_samples[:C.WIN_SIZE])
-    file.iter.close()
+    file.inner.close()
 
 
 # def write_wave():

@@ -1,6 +1,7 @@
 import numpy as np
 import math
 from tqdm import tqdm
+from scipy import signal
 import util as U
 import config as C
 
@@ -78,30 +79,50 @@ def experiment_find_best_exponent_for_simple_peak_finding():
 
 
 def experiment_locate_low_frequency():
-    def low_pass_filter(data, freq, hz):
-        F = U.ifft(data)
-        F[U.freq2index(freq, len(data), hz) + 1:] = 0
-        return U.ttf(F, data.size)
-
-    file = U.WaveReader(C.AUD_IN_PATH, C.WIN_SIZE, "samples")
+    file = U.WaveReader(C.AUD_OUT_PATH, C.WIN_SIZE * 32, "samples")
     hz = file.hz
-    lowpass_file = U.WaveWriter("./lowpass.wav", 2, hz, np.int16)
+    tbc_file = U.WaveWriter("./lowpass.wav", 2, hz, np.int16)
     approxi_file = U.WaveWriter("./approxi.wav", 2, hz, np.int16)
 
     for chunk in file:
-        lowpass = low_pass_filter(chunk, C.P.TBC_FREQ*(1+C.P.TBC_ERR_AMT), hz)
-        lowpass_file.write(lowpass)
-        freq = U.find_peak_freq(lowpass, hz, C.P.TBC_FREQ)
-        approxi_file.write(np.sin(np.arange(C.WIN_SIZE)*(freq/hz*np.pi*2)))
+        tbc_isolate = U.bandpass(chunk, hz, C.P.TBC_LOW, C.P.TBC_HIGH)
+        tbc_file.write(tbc_isolate)
+        freq = U.find_peak_freq(tbc_isolate, hz, C.P.TBC_FREQ)
+        approxi_file.write(np.sin(np.arange(C.WIN_SIZE * 32)*(freq/hz*np.pi*2)))
 
     file.close()
-    lowpass_file.close()
+    tbc_file.close()
     approxi_file.close()
+
+
+def experiment_find_control_points():
+    ROLL_SIZE = C.WIN_SIZE // 18
+    file = U.WaveReader(C.AUD_OUT_PATH, C.WIN_SIZE, "samples")
+    hz = file.hz
+    file = U.SlidingReader(file, C.TY, C.WIN_SIZE, ROLL_SIZE, False)
+    amp_file = U.WaveWriter("./amplitude.wav", 2, hz, np.int16)
+
+    lp_freq = U.index2freq((C.P.bin_spacings[0]+C.P.bin_spacings[1])/2, U.a_datasize2dftsize(C.WIN_SIZE), hz)
+    hp_freq = C.P.MIN_AUDIOFREQ
+    for cl in file:
+        max_freq_base = U.freq2index(C.P.TOTAL_MAXHZ, len(cl), hz)
+        min_freq_base = U.freq2index(C.P.TOTAL_MINHZ, len(cl), hz)
+        max_freq_signal = U.freq2index(lp_freq, len(cl), hz)
+        min_freq_signal = U.freq2index(hp_freq, len(cl), hz)
+        fft = U.afft(cl)
+        amplitude = np.sum(fft[min_freq_signal:max_freq_signal])
+        amplitude /= max(np.sum(fft[min_freq_base:max_freq_base]),0.0001)
+        # amplitude = np.abs(signal.hilbert(chunk))
+        amp_file.write(amplitude * np.ones(ROLL_SIZE))
+
+    file.inner.close()
+    amp_file.close()
 
 
 if __name__ == "__main__":
     # experiment_find_best_exponent_for_simple_peak_finding()
     experiment_locate_low_frequency()
+    # experiment_find_control_points()
     pass
 
 
