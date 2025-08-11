@@ -1,7 +1,6 @@
 import config as C
 import util as U
 import math
-import wave
 import numpy as np
 
 
@@ -15,7 +14,7 @@ class Phaser:
     def emit(self, samples, value):  # value between zero and one
         value = 2**value - 1  # remap to reduce density in higher frequencies
         inc = (self.hzmul * value + self.hzadd) / C.HZ
-        out = (np.array(range(samples), dtype=np.float32) + 1) * inc + self.ph
+        out = (np.array(range(samples), dtype=C.TY) + 1) * inc + self.ph
         out = np.sin(np.pi * 2 * out)
         self.ph += inc * samples
         self.ph -= math.floor(self.ph)
@@ -24,7 +23,6 @@ class Phaser:
 
 
 def read_aud_in_as_chunks():
-    # assert C.FM_
     assert math.log2(C.P.FM_BASE)-math.floor(math.log2(C.P.FM_BASE)+.0001) < .0001, "FM data modulation base is not a power of two"
     chunk_bits = round(math.log2(C.P.FM_BASE))
 
