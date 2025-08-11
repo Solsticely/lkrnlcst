@@ -7,6 +7,8 @@ DAT_OUT_PATH = "out.dat"
 AUD_IN_PATH = "in.wav"
 AUD_OUT_PATH = "out.wav"
 HZ = 44100  # samples per second
+WINDOW_SIZE = HZ//50
+WINDOW_OFFSET = WINDOW_SIZE//3
 KHZ = HZ // 1000
 AUD_SAMPWIDTH = 3  # 24 bits. will be signed
 # Should be the smallest size of int greater than or equal to AUD_SAMPWIDTH bytes
@@ -17,18 +19,19 @@ MAX = 2**(8*AUD_SAMPWIDTH-1)-1
 
 # Profile
 class Profile:
-    # frequency modulation will have base FM_BASE, and can encode from 0 to FM_BASE
-    FM_BASE = 16
-    TOTAL_MINHZ = 200
-    TOTAL_MAXHZ = 11000
-    TBC_ERR_AMT = .2  # allow 20% error by wow&flutter
-    TBC_FREQ = TOTAL_MINHZ / (1-TBC_ERR_AMT)
-    # represents how long a certain frequency should last. is modified more.
-    # 1 full cycle at the minimum frequency
-    MIN_FREQTIME = 1/TOTAL_MINHZ
-    # 5 milliseconds minimum +- wow & flutter error
-    MIN_FREQTIME = max((1+TBC_ERR_AMT)*.005, MIN_FREQTIME)
-    MIN_AUDIOFREQ = TBC_FREQ*(1+TBC_ERR_AMT)  # TODO: plus some boundary!
+    def __init__(self):
+        # frequency modulation will have base FM_BASE, and can encode from 0 to FM_BASE
+        self.FM_BASE = 16
+        self.TOTAL_MINHZ = 200
+        self.TOTAL_MAXHZ = 11000
+        self.TBC_ERR_AMT = .2  # allow 20% error by wow&flutter
+        self.TBC_FREQ = self.TOTAL_MINHZ / (1-self.TBC_ERR_AMT)
+        # represents how long a certain frequency should last. is modified more.
+        # 1 full cycle at the minimum frequency
+        self.MIN_FREQTIME = 1/self.TOTAL_MINHZ
+        # 5 milliseconds minimum +- wow & flutter error
+        self.MIN_FREQTIME = max((1+self.TBC_ERR_AMT)*.005, self.MIN_FREQTIME)
+        self.MIN_AUDIOFREQ = self.TBC_FREQ*(1+self.TBC_ERR_AMT)  # TODO: plus some boundary!
 
 
 P = Profile()
