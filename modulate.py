@@ -3,6 +3,7 @@ import util as U
 import math
 import numpy as np
 import time
+import os
 
 
 class Phaser:
@@ -62,9 +63,9 @@ def modulate():
         return U.index2freq(bin, dft_size, C.HZ)
 
     bin_count = len(C.P.bin_spacings)
-    phx = [Phaser(bin_to_freq(i), bin_to_freq(i)) for i in C.P.bin_spacings[1:]]
+    phx = [Phaser(bin_to_freq(i), bin_to_freq(i)) for i in C.P.bin_spacings[2:]]
     tbc = Phaser(C.P.TBC_FREQ, C.P.TBC_FREQ)
-    timer = Phaser(bin_to_freq(C.P.bin_spacings[0]), 0)
+    timer = Phaser(bin_to_freq(C.P.bin_spacings[0]), bin_to_freq(C.P.bin_spacings[1]))
     clock = False
 
     while not chunks.is_eof:
@@ -75,12 +76,12 @@ def modulate():
         chunk_duration = accum_whole + duration
 
         amps = [chunks.next() for i in range(bin_count)]
-        amp_mul = 1/(sum(amps) + 1 + c_amp)
+        amp_mul = 1/(sum(amps) + 1 + 2)
         all_chunks = np.zeros(chunk_duration, dtype=C.TY)
         for ph, amp in zip(phx, amps):
             all_chunks += ph.emit(chunk_duration, 0, amp * amp_mul)
         all_chunks += tbc.emit(chunk_duration, 0, 1 * amp_mul)
-        all_chunks += timer.emit(chunk_duration, 0, c_amp * amp_mul)
+        all_chunks += timer.emit(chunk_duration, c_amp, 1 * amp_mul)
 
         yield all_chunks
 
@@ -95,7 +96,9 @@ def main():
             file.write(chunk)
 
     elapsed = time.time()-before
+    filesize = os.path.getsize(C.DAT_IN_PATH)
     print("Generated %.1f seconds of audio in %.1f seconds (%.2f×)" % (total_time, elapsed, total_time/elapsed))
+    print("Approx min/MiB: %.1f" % (total_time/60/filesize*1024*1024,))
 
 
 if __name__ == "__main__":

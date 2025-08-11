@@ -3,6 +3,7 @@ import util as U
 import numpy as np
 import math
 import experiments as E
+import time
 
 # TODO: do noise reduction
 
@@ -17,73 +18,84 @@ def get_time_difference():
     pass
 
 
-def time_base_correct():
-    def iter_speed_adjust(chunks, speed):
-        for chunk in chunks:
-            yield U.speed_adjust(chunk, speed)
+def speed_warp(samples, speed):
+    warp_samples = []
+    sample_offset = 0
+    while math.floor(sample_offset)+1 < len(samples):
+        floored = round(math.floor(sample_offset))
+        sample = U.lerp(sample_offset-floored, samples[floored], samples[floored+1])
+        warp_samples.append(sample)
+        sample_offset += U.lerp(sample_offset-floored, speed[floored], speed[floored+1])
+    return np.array(warp_samples, dtype=C.TY)
 
-    roll_size = C.WIN_SIZE - C.WIN_ROFF
-    rolling_speed = np.copy(C.WIN_MASK)
-    file = U.WaveReader(C.AUD_IN_PATH, C.WIN_SIZE, "samples")
-    hz = file.hz
-    tbc_samples = []
+
+def time_base_correct(hz, file):
+    expected_freq = C.P.TBC_FREQ
+    WIN_SIZE = C.WIN_SIZE
+    # NOTE: keep in mind that the standard window roll is C.WIN_SIZE-C.WIN_ROFF
+    # this is a nonstandard roll
+    ROLL_SIZE = C.WIN_ROFF
+    WIN_SIZE *= 2
+
+    file = U.SlidingReader(file, WIN_SIZE, ROLL_SIZE, pad=True)
+    hz_swrt = U.SlidingWriter(file.basic_mask, file.basic_mask_beginning, ROLL_SIZE, expected_freq)
+    low_bin = U.freq2index(C.P.TBC_LOW, WIN_SIZE, hz)
+    high_bin = U.freq2index(C.P.TBC_HIGH, WIN_SIZE, hz)
     speeds = []
 
-    # NOTE 1
-    # TODO: dirty fix: input with a different rate than C.HZ is misconfigured
-    # for find_peak_freq, returning the wrong frequencies. until we fix
-    # find_peak_freq to use a different method (likely will be zero xing) we
-    # will pretend the input is the correct frequency. If note is in effect,
-    # All future lines with this hack applied will have a   # see NOTE 1
-    # comment next to them.
-    hzmul = C.HZ / hz  # see NOTE 1
+    for window in file:
+        tbc_dft = U.ifft(window)
 
-    file = iter_speed_adjust(file, hzmul)
-    file = U.SlidingReader(file)
+        # bandpass
+        tbc_dft[:low_bin+1] = 0
+        tbc_dft[high_bin:] = 0
 
-    for samples in file:
-        rolling_speed[:roll_size] = 0
-        rolling_speed = np.roll(rolling_speed, -roll_size)
+        # separate sign & magnitude. to be joined later
+        dft_sgn, tbc_dft = np.sign(tbc_dft), np.abs(tbc_dft)
 
-        # see NOTE 1
-        tbc_wave = U.bandpass(samples, C.HZ, C.P.TBC_LOW, C.P.TBC_HIGH, False)
-        freq = U.find_peak_freq(tbc_wave, C.HZ, C.P.TBC_FREQ)
+        # remove noise
+        tbc_dft -= np.median(tbc_dft[low_bin:high_bin]) * 1.5
+        tbc_dft = np.maximum(tbc_dft, 0)
 
-        speed = max(min(1+C.P.TBC_ERR_AMT, C.P.TBC_FREQ/freq), 1-C.P.TBC_ERR_AMT)
-        speeds.append(speed*100-100)
-        rolling_speed += C.WIN_MASK * speed
+        # rejoin sign & magnitude
+        tbc_dft = tbc_dft * dft_sgn
 
-        sample_offset = 0
-        while sample_offset < roll_size:
-            # floored = round(sample_offset)
-            # sample = samples[floored]
-            floored = round(math.floor(sample_offset))
-            # sample = samples[floored]
-            sample = U.lerp(sample_offset-floored, samples[floored], samples[floored+1])
-            tbc_samples.append(sample)
-            sample_offset += U.lerp(sample_offset-floored, rolling_speed[floored], rolling_speed[floored+1])
-        # yield rolling_speed[:roll_size]-1
+        # turn into time-domain again
+        tbc = U.ttf(tbc_dft, len(window))
 
-        while len(tbc_samples) > C.WIN_SIZE:
-            print(end=".", flush=True)
-            yield np.array(tbc_samples[:C.WIN_SIZE])
-            tbc_samples = tbc_samples[C.WIN_SIZE:]
+        # find zero crossings & frequency
+        sign = np.sign(tbc)
+        change = (sign - np.roll(sign, 1))[1:]
+        zxings = np.arange(len(change), dtype=C.TY)[change > 0.5]
 
-    print()
-    print(end="Speed deviance: (in %age; 95th %ile / 2*\u03c3) ")
+        distance = (zxings - np.roll(zxings, 1))[1:] if len(zxings) > 0 else hz/expected_freq
+        distance = np.average(distance)  # samples per cycle
+        distance /= hz  # seconds per cycle
+        freq = 1 / distance  # hz
+
+        # speed = np.clip(expected_freq/hz_swrt.write(freq), 1-C.P.TBC_ERR_AMT, 1+C.P.TBC_ERR_AMT)
+        speed = expected_freq/hz_swrt.write(freq)
+        speeds.append(expected_freq/freq * 100 - 100)
+
+        yield speed_warp(window[:ROLL_SIZE], speed)
+
+    print(end="Speed deviance: (in %age; 2*\u03c3) ")
     E.gauss(speeds)
-    tbc_samples += [0]*(C.WIN_SIZE - len(tbc_samples) + 1)
-    yield np.array(tbc_samples[:C.WIN_SIZE])
-    file.inner.close()
 
+    # No need to yield remaining data in hz_swrt, since we used padding in
+    # sliding reader
 
-# def write_wave():
-# oupt = wave.open(C.AUD_IN_PATH, "w")
 
 if __name__ == "__main__":
-    # hz = U.get_hz(C.AUD_IN_PATH)
-    hz = C.HZ  # see NOTE 1 in time_base_correct
-    with U.WaveWriter(C.AUD_OUT_PATH, C.AUD_SAMPWIDTH, hz, C.AUD_NPTYPE) as file:
-        for i in time_base_correct():
-            file.write(i)
+    file = U.WaveReader(C.AUD_IN_PATH)
+    hz = file.hz
 
+    total_time = 0
+    before = time.time()
+    with U.WaveWriter(C.AUD_OUT_PATH, C.AUD_SAMPWIDTH, hz, C.AUD_NPTYPE) as outfile:
+        for i in time_base_correct(hz, file):
+            total_time += len(i)/hz
+            outfile.write(i)
+
+    elapsed = time.time() - before
+    print("Processed %.1f seconds of audio in %.1f seconds (%.2f×)" % (total_time, elapsed, total_time/elapsed))

@@ -1,7 +1,7 @@
 import numpy as np
 import math
 from tqdm import tqdm
-from scipy import signal
+# from scipy import signal
 import util as U
 import config as C
 
@@ -81,7 +81,7 @@ def experiment_find_best_exponent_for_simple_peak_finding():
 def experiment_locate_low_frequency():
     file = U.WaveReader(C.AUD_OUT_PATH, C.WIN_SIZE * 32, "samples")
     hz = file.hz
-    tbc_file = U.WaveWriter("./lowpass.wav", 2, hz, np.int16)
+    tbc_file = U.WaveWriter("./tbc_isolate.wav", 2, hz, np.int16)
     approxi_file = U.WaveWriter("./approxi.wav", 2, hz, np.int16)
 
     for chunk in file:
@@ -95,11 +95,76 @@ def experiment_locate_low_frequency():
     approxi_file.close()
 
 
+def experiment_locate_tbc_with_zxing():
+
+    def find_zxings(signal):
+        sign = np.sign(signal)
+        change = sign - np.roll(sign, 1)
+        change = change[1:]
+        zxings = np.arange(len(change), dtype=C.TY)[change > 0.5]
+        return zxings
+
+    expected_freq = C.P.TBC_FREQ
+    WIN_SIZE = C.WIN_SIZE
+    ROLL_SIZE = C.WIN_ROFF
+    WIN_SIZE *= 2
+
+    file = U.WaveReader(C.AUD_IN_PATH, WIN_SIZE, "samples")
+    hz = file.hz
+    file = U.SlidingReader(file, WIN_SIZE, ROLL_SIZE, pad=True)
+    hz_file = U.WaveWriter("./speed_variation.wav", 4, hz, np.int32)
+    hz_swrt = U.SlidingWriter(file.basic_mask, file.basic_mask_beginning, ROLL_SIZE, 0)
+    tbc_file = U.WaveWriter("./tbc_isolate.wav", 2, hz, np.int16)
+    import modulate
+    approxi_phaser = modulate.Phaser(0, 1)
+    approxi_file = U.WaveWriter("./approxi.wav", 2, hz, np.int16)
+    medians = []
+    low_bin = U.freq2index(C.P.TBC_LOW, WIN_SIZE, hz) + 8  # TODO: remove me
+    high_bin = U.freq2index(C.P.TBC_HIGH, WIN_SIZE, hz)
+
+    for window in file:
+        tbc_dft = U.ifft(window)
+
+        # bandpass
+        tbc_dft[:low_bin+1] = 0
+        tbc_dft[high_bin:] = 0
+
+        # separate sign & magnitude. to be joined later
+        dft_sgn, tbc_dft = np.sign(tbc_dft), np.abs(tbc_dft)
+
+        # remove noise
+        tbc_dft -= np.median(tbc_dft[low_bin:high_bin]) * 1.5
+        tbc_dft = np.maximum(tbc_dft, 0)
+
+        # rejoin sign & magnitude
+        tbc_dft = tbc_dft * dft_sgn
+
+        # turn into time-domain again
+        tbc = U.ttf(tbc_dft, len(window))
+
+        # find zero crossings & frequency
+        zxings = find_zxings(tbc)
+        freq = expected_freq
+        if len(zxings) > 2:
+            distance = (zxings - np.roll(zxings, 1))[1:]
+            distance = np.average(distance)  # samples per cycle
+            distance /= hz  # now seconds per cycle
+            freq = 1 / distance  # hz
+            medians.append(freq)
+
+        hz_file.write(hz_swrt.write(freq/expected_freq-1))
+        tbc_file.write(tbc[:ROLL_SIZE])
+        approxi_file.write(approxi_phaser.emit(ROLL_SIZE, freq, 0.8))
+
+    hz_file.write(hz_swrt.clean_up())
+    gauss(medians)
+
+
 def experiment_find_control_points():
     ROLL_SIZE = C.WIN_SIZE // 18
     file = U.WaveReader(C.AUD_OUT_PATH, C.WIN_SIZE, "samples")
     hz = file.hz
-    file = U.SlidingReader(file, C.TY, C.WIN_SIZE, ROLL_SIZE, False)
+    file = U.SlidingReader(file, C.WIN_SIZE, ROLL_SIZE, False)
     amp_file = U.WaveWriter("./amplitude.wav", 2, hz, np.int16)
 
     lp_freq = U.index2freq((C.P.bin_spacings[0]+C.P.bin_spacings[1])/2, U.a_datasize2dftsize(C.WIN_SIZE), hz)
@@ -121,8 +186,9 @@ def experiment_find_control_points():
 
 if __name__ == "__main__":
     # experiment_find_best_exponent_for_simple_peak_finding()
-    experiment_locate_low_frequency()
+    # experiment_locate_low_frequency()
     # experiment_find_control_points()
+    experiment_locate_tbc_with_zxing()
     pass
 
 

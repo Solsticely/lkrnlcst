@@ -34,28 +34,28 @@ class Profile:
         self.FM_BASE = 2
         self.TOTAL_MINHZ = 200
         self.TOTAL_MAXHZ = 11000
-        self.TBC_ERR_AMT = .5  # allow 50% error by wow&flutter
+        self.TBC_ERR_AMT = .09  # allow 10% error by wow&flutter
         self.TBC_HIGH = self.TOTAL_MAXHZ
         self.TBC_FREQ = self.TOTAL_MAXHZ / (1+self.TBC_ERR_AMT)
         self.TBC_LOW = self.TBC_FREQ * (1-self.TBC_ERR_AMT)
 
         # The frequency boundaries for valid data frequencies
         self.MIN_AUDIOFREQ = self.TOTAL_MINHZ
-        self.MAX_AUDIOFREQ = self.TBC_LOW  # TODO: minus some boundary!
+        self.MAX_AUDIOFREQ = self.TBC_LOW / (1+self.TBC_ERR_AMT)
 
         # represents how long a certain frequency should last. is modified more.
         # 1 full cycle at the minimum frequency
         self.MIN_FREQTIME = 1/self.TOTAL_MINHZ
-        # 75 milliseconds minimum +- wow & flutter error
-        self.MIN_FREQTIME = max((1+self.TBC_ERR_AMT)*.075, self.MIN_FREQTIME)
+        # 37.5 milliseconds minimum +- wow & flutter error
+        self.MIN_FREQTIME = max((1+self.TBC_ERR_AMT)*.0375, self.MIN_FREQTIME)
         # rounded up to a whole # of windows, for convenience's sake (and for
         # ability to test what happens when wow & flutter makes windows fall
         # between chunks)
         self.MIN_FREQTIME = math.ceil(self.MIN_FREQTIME / (WIN_SIZE/HZ))*(WIN_SIZE/HZ)
 
         # minimum DFT bin spacing when encoding
-        self.DFT_BIN_DELTA = 3.5
-        self.DFT_BIN_DELTA_MULT = 0.05
+        self.DFT_BIN_DELTA = 4
+        self.DFT_BIN_DELTA_MULT = 0  # 0.05
         # actual spacing is calculated as:
         # last_freq * DELTA_MULT + index2freq(freq2index(last_freq) + DELTA)
         # and rounded to nearest bin during actual encoding & decoding

@@ -11,6 +11,7 @@ def chunk(list, size, default=0):
 
 
 def make_rolling_mask(window_size: int, offset_size: int):
+    assert offset_size <= window_size
     ramp_size = min(window_size - offset_size, offset_size)
     plateau_size = window_size - ramp_size * 2
     factor = ramp_size / (window_size - offset_size)
@@ -22,7 +23,7 @@ def make_rolling_mask(window_size: int, offset_size: int):
         )) * factor,
         np.concat((
             np.linspace(1, 0, window_size - offset_size, False, dtype=C.TY),
-            np.ones(offset_size, dtype=C.TY)
+            np.zeros(offset_size, dtype=C.TY)
         ))
     )
 
@@ -115,19 +116,21 @@ class SlidingReader:
         self.pad = pad
 
     def __next__(self):
-        if self.is_finished:
+        if self.is_finished and len(self.samples) < self.window_size:
             raise StopIteration()
 
         self.samples = self.samples[self.roll_size:]
-        while len(self.samples) < self.window_size:
+        while len(self.samples) < self.window_size and not self.is_finished:
             try:
                 self.samples = np.concat((self.samples, self.inner.__next__()))
             except StopIteration:
                 self.is_finished = True
+                pad_size = self.window_size - len(self.samples)
                 if self.pad:
-                    pad_size = self.window_size - len(self.samples)
-                    padding = np.zeros(pad_size, dtype=C.TY)
-                    self.samples = np.concat((self.samples, padding))
+                    pad_size += self.window_size
+                padding = np.zeros(pad_size, dtype=C.TY)
+                self.samples = np.concat((self.samples, padding))
+
                 break
 
         return self.samples[:self.window_size]
@@ -135,9 +138,27 @@ class SlidingReader:
     def __iter__(self): return self
 
 
-def get_hz(path):
-    with WaveReader(path) as (hz, _wv):
-        return hz
+class SlidingWriter:
+    def __init__(self, mask: np.ndarray, ends: np.ndarray, offset_size: int, ends_value):
+        self.mask = mask
+        self.ends = ends
+        assert len(mask) == len(ends)
+        self.roff = offset_size
+        assert self.roff < len(mask)
+        self.buffer = ends * ends_value
+        self.ends_value = ends_value
+
+    def write(self, value):
+        # steps: add, rotate, take
+        self.buffer += self.mask * value
+        self.buffer = np.roll(self.buffer, -self.roff)
+        take = np.copy(self.buffer[-self.roff:])
+        self.buffer[-self.roff:] = 0
+        return take
+
+    def clean_up(self, value=None):
+        self.buffer += (1 - self.ends) * (value or self.ends_value)
+        return self.buffer
 
 
 lerp = (lambda t, a, b: (b-a)*t+a)
