@@ -37,7 +37,7 @@ def experiment_find_best_exponent_for_simple_peak_finding():
         as_weights = as_weights / np.sum(as_weights)
 
         index = np.sum(np.arange(len(dft)) * as_weights)
-        return U.index2freq(index, len(dft), hz)
+        return U.bin2hz(index, len(dft), hz)
 
     hz = 44100
     wsize = hz // 50
@@ -119,8 +119,8 @@ def experiment_locate_tbc_with_zxing():
     approxi_phaser = modulate.Phaser(0, 1)
     approxi_file = U.WaveWriter("./approxi.wav", 2, hz, np.int16)
     medians = []
-    low_bin = U.freq2index(C.P.TBC_LOW, WIN_SIZE, hz) + 8  # TODO: remove me
-    high_bin = U.freq2index(C.P.TBC_HIGH, WIN_SIZE, hz)
+    low_bin = U.hz2bin(C.P.TBC_LOW, WIN_SIZE, hz) + 8  # TODO: remove me
+    high_bin = U.hz2bin(C.P.TBC_HIGH, WIN_SIZE, hz)
 
     for window in file:
         tbc_dft = U.ifft(window)
@@ -167,13 +167,13 @@ def experiment_find_control_points():
     file = U.SlidingReader(file, C.WIN_SIZE, ROLL_SIZE, False)
     amp_file = U.WaveWriter("./amplitude.wav", 2, hz, np.int16)
 
-    lp_freq = U.index2freq((C.P.bin_spacings[0]+C.P.bin_spacings[1])/2, U.a_datasize2dftsize(C.WIN_SIZE), hz)
+    lp_freq = (C.P.freq_spacings[0]+C.P.freq_spacings[1])/2
     hp_freq = C.P.MIN_AUDIOFREQ
     for cl in file:
-        max_freq_base = U.freq2index(C.P.TOTAL_MAXHZ, len(cl), hz)
-        min_freq_base = U.freq2index(C.P.TOTAL_MINHZ, len(cl), hz)
-        max_freq_signal = U.freq2index(lp_freq, len(cl), hz)
-        min_freq_signal = U.freq2index(hp_freq, len(cl), hz)
+        max_freq_base = U.hz2bin(C.P.TOTAL_MAXHZ, len(cl), hz)
+        min_freq_base = U.hz2bin(C.P.TOTAL_MINHZ, len(cl), hz)
+        max_freq_signal = U.hz2bin(lp_freq, len(cl), hz)
+        min_freq_signal = U.hz2bin(hp_freq, len(cl), hz)
         fft = U.afft(cl)
         amplitude = np.sum(fft[min_freq_signal:max_freq_signal])
         amplitude /= max(np.sum(fft[min_freq_base:max_freq_base]),0.0001)

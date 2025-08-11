@@ -170,12 +170,12 @@ lerp = (lambda t, a, b: (b-a)*t+a)
 # freq = index * hz / data.size
 # freq = index * hz / 2 / (fft.size - 1)
 # curse you e731, e305 & e302
-def index2freq(index, dft_size, hz): return index * hz / (2*dft_size - 2)
-def freq2index(freq, data_size, hz): return round(freq * data_size / hz)
-def a_freq2index(freq, data_size, hz): return freq * data_size / hz
-def dftsize2datasize(sz): return 2*sz-2
-def datasize2dftsize(sz): return sz//2+1
-def a_datasize2dftsize(sz): return sz/2+1
+def bin2hz(index, dft_size, hz): return index * hz / (2*dft_size - 2)
+def hz2bin(freq, data_size, hz): return round(freq * data_size / hz)
+def a_hz2bin(freq, data_size, hz): return freq * data_size / hz
+def dft2datsz(sz): return 2*sz-2
+def dat2dftsz(sz): return sz//2+1
+def a_dat2dftsz(sz): return sz/2+1
 
 
 # Analytical FFT
@@ -205,7 +205,7 @@ def find_peak_freq(data, hz, default_if_silent=None):
     as_weights = as_weights / cumsum
 
     index = np.sum(np.arange(dft_size) * as_weights)
-    return index2freq(index, a_datasize2dftsize(len(data)), hz)
+    return bin2hz(index, a_dat2dftsz(len(data)), hz)
 
 
 def speed_adjust(data, speed):
@@ -225,13 +225,13 @@ def speed_adjust(data, speed):
 
 def bandpass(data, hz, low: None, high: None, data_is_dft=False):
     if data_is_dft:
-        dat_size = dftsize2datasize(len(data))
+        dat_size = dft2datsz(len(data))
         dft = np.copy(data)
     else:
         dat_size = len(data)
         dft = ifft(data)
-    low_bin = 0 if low is None else freq2index(low, dat_size, hz)
-    high_bin = len(dft) if high is None else freq2index(high, dat_size, hz)
+    low_bin = 0 if low is None else hz2bin(low, dat_size, hz)
+    high_bin = len(dft) if high is None else hz2bin(high, dat_size, hz)
     dft[:low_bin+1] = 0
     dft[high_bin:] = 0
     return dft if data_is_dft else ttf(dft, dat_size)

@@ -10,7 +10,7 @@ import time
 
 def low_pass_filter(data, freq, hz):
     F = U.ifft(data)
-    F[U.freq2index(freq, len(data), hz) + 1:] = 0
+    F[U.hz2bin(freq, len(data), hz) + 1:] = 0
     return U.ttf(F, data.size)
 
 
@@ -39,8 +39,8 @@ def time_base_correct(hz, file):
 
     file = U.SlidingReader(file, WIN_SIZE, ROLL_SIZE, pad=True)
     hz_swrt = U.SlidingWriter(file.basic_mask, file.basic_mask_beginning, ROLL_SIZE, expected_freq)
-    low_bin = U.freq2index(C.P.TBC_LOW, WIN_SIZE, hz)
-    high_bin = U.freq2index(C.P.TBC_HIGH, WIN_SIZE, hz)
+    low_bin = U.hz2bin(C.P.TBC_LOW, WIN_SIZE, hz)
+    high_bin = U.hz2bin(C.P.TBC_HIGH, WIN_SIZE, hz)
     speeds = []
 
     for window in file:

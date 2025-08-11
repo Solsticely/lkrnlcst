@@ -81,44 +81,6 @@ def modulate():
         yield signal * amp_mul
 
 
-# def modulate():
-    # chunks = read_aud_in_as_chunks()
-    # chunks = U.ChunkEater(chunks, 0)
-    # duration = C.P.MIN_FREQTIME * C.HZ
-    # duration, duration_residue_inc = round(duration), duration-round(duration)
-    # duration_accum = 0
-
-    # def bin_to_freq(bin):
-        # these are bins for the actual DFT later on in demodulation, not bins
-        # for modulation. therefore we don't use duration as sample count, we
-        # have to use demodulation sample sizes.
-        # dft_size = U.datasize2dftsize(C.WIN_SIZE)
-        # return U.index2freq(bin, dft_size, C.HZ)
-
-    # bin_count = len(C.P.bin_spacings)
-    # phx = [Phaser(bin_to_freq(i), bin_to_freq(i)) for i in C.P.bin_spacings[2:]]
-    # tbc = Phaser(C.P.TBC_FREQ, C.P.TBC_FREQ)
-    # timer = Phaser(bin_to_freq(C.P.bin_spacings[0]), bin_to_freq(C.P.bin_spacings[1]))
-    # clock = False
-
-    # while not chunks.is_eof:
-        # clock = not clock
-        # c_amp = 1 if clock else 0
-        # accum_whole = round(duration_accum)
-        # duration_accum += duration_residue_inc - accum_whole
-        # chunk_duration = accum_whole + duration
-
-        # amps = [chunks.next() for i in range(bin_count)]
-        # amp_mul = 1/(sum(amps) + 1 + 2)
-        # all_chunks = np.zeros(chunk_duration, dtype=C.TY)
-        # for ph, amp in zip(phx, amps):
-            # all_chunks += ph.emit(chunk_duration, 0, amp * amp_mul)
-        # all_chunks += tbc.emit(chunk_duration, 0, 1 * amp_mul)
-        # all_chunks += timer.emit(chunk_duration, c_amp, 1 * amp_mul)
-
-        # yield all_chunks
-
-
 def main():
     wr = U.WaveWriter(C.AUD_OUT_PATH, C.AUD_SAMPWIDTH, C.HZ, C.AUD_NPTYPE)
     total_time = 0
