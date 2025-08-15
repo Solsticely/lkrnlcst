@@ -57,14 +57,6 @@ def modulate():
     tbc = Phaser(C.P.TBC_FREQ)
     clock = False
 
-    # bins = np.arange(starting_bin, ending_bin+1, C.P.DFT_BIN_DELTA, dtype=np.int16)
-    max_vol_dft = np.zeros(C.P.dft_size)
-    max_vol_sc = math.ceil(duration)
-    for i in C.P.bin_spacings:
-        max_vol_dft[i] = C.P.DFT_BIN_MULT
-    max_vol = U.ttf(max_vol_dft, max_vol_sc) + Phaser(C.P.TBC_FREQ).emit(max_vol_sc)
-    amp_mul = 0.8 / np.max(np.abs(max_vol))
-
     while not chunks.is_eof:
         c_amp = 1 if clock else 0
         clock = not clock
@@ -75,10 +67,10 @@ def modulate():
         dft = np.zeros(C.P.dft_size)
 
         for inx, bit in enumerate(data):
-            dft[C.P.bin_spacings[inx]] = bit * C.P.DFT_BIN_MULT
+            dft[C.P.bin_spacings[inx]] = bit * C.P.DFT_AMP_MUL
 
         signal = U.ttf(dft, samples) + tbc.emit(samples)
-        yield signal * amp_mul
+        yield signal * C.P.DFT_AMP_MUL
 
 
 def main():
@@ -93,9 +85,12 @@ def main():
     elapsed = time.time()-before
     filesize = os.path.getsize(C.DAT_IN_PATH)
     lin_filesize = os.path.getsize("./linux.dat")
+    bytes_per_second = filesize/total_time
+
     print("Generated %.1f seconds of audio in %.1f seconds (%.2f×)" % (total_time, elapsed, total_time/elapsed))
-    print("Approx min/MiB: %.1f" % (total_time/60/filesize*1024*1024,))
-    print("Approx final C-number w/ linux: C-%.0f (mins) \u00b1 wow&flutter & speed misconfiguration & ends" % (total_time/60/filesize*lin_filesize))
+    print("Approx min/MiB: %.1f" % (1024**2/60/bytes_per_second))
+    print("Approx baud: %.1f bit/s, approx storage efficiency: %.1fKiB/s" % (bytes_per_second*8, bytes_per_second/1024))
+    print("Approx final C-number w/ linux: C-%.0f (mins) \u00b1 wow&flutter & speed misconfiguration & ends" % (lin_filesize/bytes_per_second/60))
 
 
 if __name__ == "__main__":

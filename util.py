@@ -28,6 +28,38 @@ def make_rolling_mask(window_size: int, offset_size: int):
     )
 
 
+# TODO: this is a very slow function
+def zip_streams(parent, *children, regular_block_size=None):
+    def dummy_generator(size=C.WIN_SIZE):
+        while True:
+            yield np.zeros(size)
+
+    # Handle regular block-sizes!
+    if regular_block_size is not None:
+        dummy_gen = dummy_generator(regular_block_size)
+        return (i[1:] for i in zip_streams(dummy_gen, parent, *children))
+
+    residues = [np.array([], C.TY) for i in children]
+    dummy_gens = [dummy_generator() for i in children]
+    for block in parent:
+        block_size = len(block)
+        child_blocks = []
+
+        for inx, child in enumerate(children):
+            while residues[inx].size < block_size:
+                try:
+                    residues[inx] = np.append(residues[inx], child.__next__())
+                except StopIteration:
+                    children[inx] = dummy_gens[inx]
+                    print(
+                        "WARN: Child", inx, child, "stopped generating before parent!"
+                    )
+            child_blocks.append(residues[inx][:block_size])
+            residues[inx] = residues[inx][block_size:]
+
+        yield (block, *child_blocks)
+
+
 class ChunkEater:
     def __init__(self, iterator, default):
         self.iter = iterator.__iter__()
@@ -45,6 +77,10 @@ class ChunkEater:
             return self.default
 
 
+_W_IO_DTYPES = {1: np.int8, 2: np.int16, 4: np.int32, 8: np.int64}
+_W_IO_DTYPES = {w: np.dtype(_W_IO_DTYPES[w]).newbyteorder("little") for w in _W_IO_DTYPES}
+
+
 class WaveReader:
     def __init__(self, path, size=1, size_type="duration"):
         assert size_type in ["duration", "samples"]
@@ -53,6 +89,8 @@ class WaveReader:
         assert self.inpt.getnchannels() == 1, "I only support mono audio"
         self.hz = self.inpt.getframerate()
         self.width = self.inpt.getsampwidth()
+        assert self.width in _W_IO_DTYPES, "Unsupported width"
+        self.dtype = _W_IO_DTYPES[self.width]
         self.max = 2**(8*self.width-1)-1
         self.block_size = size if size_type == "samples" else size * self.hz
         self.block_size, self.block_size_residue = divmod(self.block_size, 1)
@@ -67,11 +105,10 @@ class WaveReader:
             self.close()
             raise StopIteration()
 
-        # turn into numbes
-        as_bytes = [samples[i:i+self.width] for i in range(0, len(samples), self.width)]
-        as_samples = [int.from_bytes(i, "little", signed=True) for i in as_bytes]
+        # turn into numbers
+        as_samples = np.frombuffer(samples, self.dtype)
         as_np = np.array(as_samples, dtype=C.TY) / self.max
-        return np.concat((as_np, [0]*(size - len(as_np))))
+        return np.append(as_np, np.zeros(size-len(as_np)))
 
     def __iter__(self): return self
     def __enter__(self): return (self.hz, self)
@@ -81,6 +118,11 @@ class WaveReader:
 
 class WaveWriter:
     def __init__(self, path, width, hz, nptype):
+        assert abs(math.log2(width)-round(math.log2(width))) < .00001
+        assert type(width) is int
+        nptype = np.dtype(nptype)
+        assert nptype.alignment == width == nptype.itemsize
+
         self.width = width
         self.max = 2**(8*self.width-1)-1
         self.min = -2**(8*self.width-1)
@@ -95,9 +137,8 @@ class WaveWriter:
 
     def write(self, frames):
         clamped = np.clip((frames * self.factor).astype(self.nptype), a_max=self.max, a_min=self.min)
-        # TODO: this is slow
-        as_bytes = (int.to_bytes(int(i), self.width, "little", signed=True) for i in clamped)
-        self.file.writeframes(b"".join(as_bytes))
+        as_bytes = clamped.view(self.nptype.newbyteorder("little")).tobytes()
+        self.file.writeframes(as_bytes)
 
     def __enter__(self): return self
     def __exit__(self, exc_type, exc_val, exc_tb): self.close()
@@ -105,7 +146,7 @@ class WaveWriter:
 
 
 class SlidingReader:
-    def __init__(self, chunks, window_size: int = C.WIN_SIZE, roll_size: int = C.WIN_SIZE - C.WIN_ROFF, pad: bool = True):
+    def __init__(self, chunks, window_size: int = C.WIN_SIZE, roll_size: int = C.WIN_ROLL, pad: bool = True):
         self.roll_size = roll_size
         self.window_size = window_size
         assert roll_size <= window_size, "Roll"
@@ -159,6 +200,82 @@ class SlidingWriter:
     def clean_up(self, value=None):
         self.buffer += (1 - self.ends) * (value or self.ends_value)
         return self.buffer
+
+
+class StreamSplitter:
+    def __init__(self, stream_to_split):
+        self.inner = stream_to_split.__iter__()
+        self.pointers = []  # For each split, is the last block that's been yielded
+        self.blocks = {}
+        self.last = 0  # Stores the last block that's been yielded
+        self.next = 0  # Stores the index of the next block to be generated
+        self.terminates_at = None  # Stores the last yieldable block
+
+    def split(self, count=1):
+        splits =  tuple(self.__get_new_generator() for _i in range(count))
+        return splits[0] if count == 1 else splits
+
+    def __get_new_generator(self):
+        index = len(self.pointers)
+        self.pointers.append(self.next - 1)
+
+        try:
+            while True:
+                yield self.__get_new_block_for_index(index)
+        except StopIteration:
+            return
+
+    def __get_new_block_for_index(self, index):
+        # Steps:
+        # 1. if you're at the end, error and bail
+        # 2. clean-up if you're the slowest pointer
+        # 3. if there is a block to get, get block
+        # 4. if there isn't a block to get, add block
+        # 5. do stream termination logic
+
+        prev_yield = self.pointers[index]
+
+        # 1. if at end, bail
+        if prev_yield == self.terminates_at:
+            raise StopIteration()
+
+        # 2. clean up if you're the slowest pointer
+        if prev_yield == self.last:
+            is_only_pointer_in_last = True
+
+            for inx, pos in enumerate(self.pointers):
+                if inx == index:
+                    continue
+                if pos == self.last:
+                    is_only_pointer_in_last = False
+                    break
+
+            if is_only_pointer_in_last:
+                self.blocks.pop(prev_yield)
+
+        self.pointers[index] += 1
+        next_yield = self.pointers[index]
+
+        # 3. If there's a block already available, return it
+        if next_yield != self.next:
+            return self.blocks[next_yield]
+
+        # 4. If we're here, we need a new block to return, so get that
+        new_block = None
+
+        try:
+            new_block = self.inner.__next__()
+
+        except StopIteration:
+            # 5. Do termination logic
+            self.terminates_at = prev_yield
+            raise StopIteration()
+
+        # Back to 4.
+        self.blocks[self.next] = new_block
+        self.next += 1
+
+        return new_block
 
 
 lerp = (lambda t, a, b: (b-a)*t+a)

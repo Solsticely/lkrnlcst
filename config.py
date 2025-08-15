@@ -12,16 +12,15 @@ AUD_OUT_PATH = "out.wav"
 HZ = 44100  # samples per second
 WIN_SIZE = HZ//50  # Window size, samples
 WIN_ROFF = (4*WIN_SIZE)//9  # Window rolloff size, samples
+WIN_ROLL = WIN_SIZE - WIN_ROFF
 KHZ = HZ // 1000
-AUD_SAMPWIDTH = 3  # 24 bits. will be signed
+AUD_SAMPWIDTH = 4  # 32 bits. will be signed
 # Should be the smallest size of int greater than or equal to AUD_SAMPWIDTH bytes
 AUD_NPTYPE = np.int32
 MIN = -2**(8*AUD_SAMPWIDTH-1)
 MAX = 2**(8*AUD_SAMPWIDTH-1)-1
 
 assert WIN_ROFF * 2 < WIN_SIZE, "window rolloff is bigger than window size"
-WIN_MASK = np.concat((np.linspace(0, 1, WIN_ROFF, False, dtype=TY), np.ones(WIN_SIZE-2*WIN_ROFF, dtype=TY), np.linspace(1, 0, WIN_ROFF, False, dtype=TY)))
-assert len(WIN_MASK) == WIN_SIZE
 
 seed = 0x1507681e975e8d2ffa0a
 rng = rng.Random(seed)
@@ -55,6 +54,8 @@ class Profile:
         # flutter makes windows fall between chunks)
         self.MIN_FREQTIME = math.ceil(self.MIN_FREQTIME / (WIN_SIZE/HZ))*(WIN_SIZE/HZ) + 0.002
 
+        self.WIN_SIZE = round(self.MIN_FREQTIME * HZ)
+
         # minimum DFT bin spacing when encoding
         self.DFT_BIN_DELTA = 3
         self.DFT_BIN_DELTA_MULT = 0  # 0.05
@@ -66,14 +67,30 @@ class Profile:
         self.dft_size = round(dat2dftsz(self.MIN_FREQTIME * HZ))
         self.bin_spacings = self.get_spacings()
         self.bin_bounds = [round(a_hz2bin(self.MIN_AUDIOFREQ, self.MIN_FREQTIME*HZ, HZ))-2]+list((self.bin_spacings+np.roll(self.bin_spacings, 1))/2)[1:]+[round(a_hz2bin(self.TBC_LOW, self.MIN_FREQTIME*HZ, HZ))]
-        self.bin_bounds = [int(i) for i in self.bin_bounds]
         self.freq_spacings = np.array([bin2hz(i, self.dft_size, HZ) for i in self.bin_spacings], dtype=TY)
-        self.freq_bounds = [self.MIN_AUDIOFREQ]+(self.freq_spacings-np.roll(self.freq_spacings, 1))[1:]+[self.MAX_AUDIOFREQ]
+        self.freq_bounds = np.array([bin2hz(i, self.dft_size, HZ) for i in self.bin_bounds], dtype=TY)
+        self.bin_bounds = [int(i) for i in self.bin_bounds]
+
+        # What to multiply DFT amplitude by
         self.DFT_BIN_MULT = 12 * len(self.bin_spacings)
+        self.DFT_AMP_MUL = self.get_dft_amp_mul()
+
+    def get_dft_amp_mul(self):
+        from util import ttf
+        from modulate import Phaser
+        # bins = np.arange(starting_bin, ending_bin+1, C.P.DFT_BIN_DELTA, dtype=np.int16)
+        max_vol_dft = np.zeros(self.dft_size)
+        max_vol_sc = math.ceil(self.MIN_FREQTIME)
+        for i in self.bin_spacings:
+            max_vol_dft[i] = self.DFT_BIN_MULT * 1
+        max_vol = ttf(max_vol_dft, max_vol_sc) + Phaser(self.TBC_FREQ).emit(max_vol_sc)
+        amp_mul = 0.8 / np.max(np.abs(max_vol))
+
+        return amp_mul
 
     def get_spacings(self):
         from util import a_hz2bin
-        win_size = round(self.MIN_FREQTIME * HZ)
+        win_size = round(self.MIN_FREQTIME * HZ / 2)
         # dft_size = self.dft_size
 
         # def increment_freq(freq):
@@ -97,7 +114,7 @@ class Profile:
             math.ceil(a_hz2bin(self.MIN_AUDIOFREQ, win_size, HZ)),
             math.floor(a_hz2bin(self.MAX_AUDIOFREQ, win_size, HZ)),
             round(self.DFT_BIN_DELTA)
-        )
+        ) * 2
 
         return spacings
 
