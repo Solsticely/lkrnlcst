@@ -326,6 +326,9 @@ def find_peak_freq(data, hz, default_if_silent=None):
 
 
 def speed_adjust(data, speed):
+    if type(speed) is int:
+        speed = np.ones_like(data) * speed
+
     final = []
     index = 0
     residue = 0
@@ -333,11 +336,11 @@ def speed_adjust(data, speed):
         datapoint = lerp(residue, data[index], data[index+1])
         final.append(datapoint)
 
-        residue += speed
+        residue += lerp(residue, speed[index], speed[index+1])
         whole, residue = divmod(residue, 1)
         index += round(whole)
 
-    return np.array(final)
+    return np.array(final, dtype=data.dtype)
 
 
 def bandpass(data, hz, low: None, high: None, data_is_dft=False):
@@ -352,4 +355,37 @@ def bandpass(data, hz, low: None, high: None, data_is_dft=False):
     dft[:low_bin+1] = 0
     dft[high_bin:] = 0
     return dft if data_is_dft else ttf(dft, dat_size)
+
+
+def guess_freq(block: np.ndarray, hz: float, default_if_error: float):
+    # find zero crossings & frequency
+    sign = np.sign(block)
+    change = (sign - np.roll(sign, 1))[1:]
+    zxings = np.arange(len(change), dtype=C.TY)[change > 0.5]
+
+    distance = (
+        (zxings - np.roll(zxings, 1))[1:] if len(zxings) > 0 else hz / default_if_error
+    )
+    distance = np.average(distance)  # samples per cycle
+    distance /= hz  # seconds per cycle
+    freq = 1 / distance  # hz
+
+    return freq
+
+
+def remove_dft_noise(
+    dft: np.ndarray, target_bin_low: int, target_bin_high: int, strength: float
+):
+    # separate sign & magnitude. to be joined later
+    dft_sgn, dft_abs = np.sign(dft), np.abs(dft)
+
+    # remove noise
+    dft_abs -= np.median(dft_abs[target_bin_low:target_bin_high]) * strength
+    dft_abs = np.maximum(dft_abs, 0)
+
+    # rejoin sign & magnitude
+    dft = dft_abs * dft_sgn
+
+    return dft
+
 

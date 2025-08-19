@@ -51,34 +51,21 @@ def time_base_correct(hz, file):
         tbc_dft[:low_bin+1] = 0
         tbc_dft[high_bin:] = 0
 
-        # separate sign & magnitude. to be joined later
-        dft_sgn, tbc_dft = np.sign(tbc_dft), np.abs(tbc_dft)
-
         # remove noise
-        tbc_dft -= np.median(tbc_dft[low_bin:high_bin]) * 1.5
-        tbc_dft = np.maximum(tbc_dft, 0)
-
-        # rejoin sign & magnitude
-        tbc_dft = tbc_dft * dft_sgn
+        tbc_dft = U.remove_dft_noise(tbc_dft, low_bin, high_bin, 1.5)
 
         # turn into time-domain again
         tbc = U.ttf(tbc_dft, len(window))
 
-        # find zero crossings & frequency
-        sign = np.sign(tbc)
-        change = (sign - np.roll(sign, 1))[1:]
-        zxings = np.arange(len(change), dtype=C.TY)[change > 0.5]
+        # find wow&flutter-altered time base frequency
+        freq = U.guess_freq(tbc, hz, expected_freq)
 
-        distance = (zxings - np.roll(zxings, 1))[1:] if len(zxings) > 0 else hz/expected_freq
-        distance = np.average(distance)  # samples per cycle
-        distance /= hz  # seconds per cycle
-        freq = 1 / distance  # hz
-
+        # find speed change required to restore frequency
         # speed = np.clip(expected_freq/hz_swrt.write(freq), 1-C.P.TBC_ERR_AMT, 1+C.P.TBC_ERR_AMT)
         speed = expected_freq/hz_swrt.write(freq)
         speeds.append(expected_freq/freq * 100 - 100)
 
-        yield speed_warp(window[:ROLL_SIZE], speed)
+        yield U.speed_adjust(window[:ROLL_SIZE], speed)
 
     print(end="Speed deviance: (in %age; 2*\u03c3) ")
     E.gauss(speeds)
