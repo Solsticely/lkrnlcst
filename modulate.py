@@ -48,11 +48,31 @@ def read_aud_in_as_chunks():
     return as_floats
 
 
+def sweep():
+    # Generates a sine sweep that increases exponentially
+    DURATION_SECS = 0.5
+    START_HZ = C.P.TOTAL_MINHZ
+    END_HZ = C.P.TOTAL_MAXHZ
+
+    length = round(DURATION_SECS * C.HZ)
+    t = np.linspace(0, 1, length, dtype=C.TY)
+
+    start_hz = START_HZ * np.pi * 2 * DURATION_SECS
+    end_hz = END_HZ * np.pi * 2 * DURATION_SECS
+
+    a = np.log(end_hz) - np.log(start_hz)
+    b = start_hz / a
+
+    return np.sin(b * np.exp(a * t) - b)
+
+
 def modulate():
     chunks = read_aud_in_as_chunks()
     chunks = U.ChunkEater(chunks, 0)
     duration = C.P.MIN_FREQTIME * C.HZ
     duration_accumulator = duration
+
+    yield sweep()
 
     tbc = Phaser(C.P.TBC_FREQ)
     clock = False
