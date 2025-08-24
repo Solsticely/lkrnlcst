@@ -14,7 +14,7 @@ def make_rolling_mask(window_size: int, offset_size: int):
     assert offset_size <= window_size
     ramp_size = min(window_size - offset_size, offset_size)
     plateau_size = window_size - ramp_size * 2
-    factor = ramp_size / (window_size - offset_size)
+    factor = ramp_size / (window_size - offset_size) if ramp_size != 0 else 1
     return (
         np.concat((
             np.linspace(0, 1, ramp_size, False, dtype=C.TY),
@@ -117,10 +117,12 @@ class WaveReader:
 
 
 class WaveWriter:
-    def __init__(self, path, width, hz, nptype):
+    def __init__(self, path, width, hz):
         assert abs(math.log2(width)-round(math.log2(width))) < .00001
-        assert type(width) is int
-        nptype = np.dtype(nptype)
+        assert type(width) is int, "Invalid width"
+        assert width in _W_IO_DTYPES, "Non-power-of-two-width, or unsupported width"
+        
+        nptype = _W_IO_DTYPES[width]
         assert nptype.alignment == width == nptype.itemsize
 
         self.width = width
@@ -137,7 +139,7 @@ class WaveWriter:
 
     def write(self, frames):
         clamped = np.clip((frames * self.factor).astype(self.nptype), a_max=self.max, a_min=self.min)
-        as_bytes = clamped.view(self.nptype.newbyteorder("little")).tobytes()
+        as_bytes = clamped.view(self.nptype).tobytes()
         self.file.writeframes(as_bytes)
 
     def __enter__(self): return self
@@ -185,7 +187,7 @@ class SlidingWriter:
         self.ends = ends
         assert len(mask) == len(ends)
         self.roff = offset_size
-        assert self.roff < len(mask)
+        assert self.roff <= len(mask)
         self.buffer = ends * ends_value
         self.ends_value = ends_value
 
@@ -296,15 +298,17 @@ def a_dat2dftsz(sz): return sz/2+1
 
 
 # Analytical FFT
-def afft(data): return np.abs(np.fft.rfft(data))
+def afft(data): return np.abs(np.fft.rfft(data)) / len(data)
 
 
 # Phase-correct FFT (imaginary FFT)
-def ifft(data): return np.fft.rfft(data)
+def ifft(data): return np.fft.rfft(data) / len(data)
 
 
 # Inverse FFT
-def ttf(data, n=None): return np.fft.irfft(data, n=(n or len(data))).real
+def ttf(data, n=None):
+    n = n or dft2datsz(len(data))
+    return np.fft.irfft(data, n=n).real * n
 
 
 def find_peak_freq(data, hz, default_if_silent=None):

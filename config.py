@@ -72,7 +72,7 @@ class Profile:
         self.bin_bounds = [int(i) for i in self.bin_bounds]
 
         # What to multiply DFT amplitude by
-        self.DFT_BIN_MULT = 12 * len(self.bin_spacings)
+        self.DFT_BIN_MULT = .5
         self.DFT_AMP_MUL = self.get_dft_amp_mul()
 
     def get_dft_amp_mul(self):
@@ -80,9 +80,9 @@ class Profile:
         from modulate import Phaser
         # bins = np.arange(starting_bin, ending_bin+1, C.P.DFT_BIN_DELTA, dtype=np.int16)
         max_vol_dft = np.zeros(self.dft_size)
-        max_vol_sc = math.ceil(self.MIN_FREQTIME)
+        max_vol_sc = math.ceil(self.WIN_SIZE)
         for i in self.bin_spacings:
-            max_vol_dft[i] = self.DFT_BIN_MULT * 1
+            max_vol_dft[i] = self.DFT_BIN_MULT
         max_vol = ttf(max_vol_dft, max_vol_sc) + Phaser(self.TBC_FREQ).emit(max_vol_sc)
         amp_mul = 0.8 / np.max(np.abs(max_vol))
 

@@ -80,7 +80,7 @@ if __name__ == "__main__":
 
     total_time = 0
     before = time.time()
-    with U.WaveWriter(C.AUD_OUT_PATH, C.AUD_SAMPWIDTH, hz, C.AUD_NPTYPE) as outfile:
+    with U.WaveWriter(C.AUD_OUT_PATH, C.AUD_SAMPWIDTH, hz) as outfile:
         for i in time_base_correct(hz, file):
             total_time += len(i)/hz
             outfile.write(i)

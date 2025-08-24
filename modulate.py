@@ -63,18 +63,18 @@ def modulate():
 
         samples = round(duration_accumulator)
         duration_accumulator += duration - samples
-        data = [c_amp, 1-c_amp] + [chunks.next() for i in range(len(C.P.bin_spacings)-2)]
+        data = [chunks.next() for i in range(len(C.P.bin_spacings)-2)] + [c_amp, 1-c_amp]
         dft = np.zeros(C.P.dft_size)
 
         for inx, bit in enumerate(data):
             dft[C.P.bin_spacings[inx]] = bit * C.P.DFT_AMP_MUL
 
-        signal = U.ttf(dft, samples) + tbc.emit(samples)
+        signal = U.ttf(dft, samples)  # + tbc.emit(samples)
         yield signal * C.P.DFT_AMP_MUL
 
 
 def main():
-    wr = U.WaveWriter(C.AUD_OUT_PATH, C.AUD_SAMPWIDTH, C.HZ, C.AUD_NPTYPE)
+    wr = U.WaveWriter(C.AUD_OUT_PATH, C.AUD_SAMPWIDTH, C.HZ)
     total_time = 0
     before = time.time()
     with wr as file:
