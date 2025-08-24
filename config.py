@@ -33,9 +33,14 @@ class Profile:
         self.FM_BASE = 2
         self.TOTAL_MINHZ = 200
         self.TOTAL_MAXHZ = 11000
-        self.TBC_ERR_AMT = .09  # allow 10% error by wow&flutter
-        self.TBC_HIGH = self.TOTAL_MAXHZ
-        self.TBC_FREQ = self.TOTAL_MAXHZ / (1+self.TBC_ERR_AMT)
+        # allow 10% error by wow&flutter and battery voltage.
+        self.TBC_ERR_AMT = .09
+        
+        # Since writing is the operation that limits min and max frequencies,
+        # we can forego adding a boundary to the top of the TBC frequency, as
+        # reading from the magnetic tape will allow higher frequencies.
+        self.TBC_FREQ = self.TOTAL_MAXHZ
+        self.TBC_HIGH = self.TBC_FREQ * (1+self.TBC_ERR_AMT)
         self.TBC_LOW = self.TBC_FREQ * (1-self.TBC_ERR_AMT)
 
         # The frequency boundaries for valid data frequencies
