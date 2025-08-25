@@ -86,8 +86,15 @@ class Profile:
         # bins = np.arange(starting_bin, ending_bin+1, C.P.DFT_BIN_DELTA, dtype=np.int16)
         max_vol_dft = np.zeros(self.dft_size)
         max_vol_sc = math.ceil(self.WIN_SIZE)
+        alter = -1
+        accum = 2
         for i in self.bin_spacings:
-            max_vol_dft[i] = self.DFT_BIN_MULT
+            accum = accum * 25519 + i
+            accum &= 0xffff
+            accum ^= accum >> 5
+            rng_scramble_bit = (accum & 1) * 2 - 1
+            rng_scramble_bit *= (alter := -alter)
+            max_vol_dft[i] = self.DFT_BIN_MULT * rng_scramble_bit
         max_vol = ttf(max_vol_dft, max_vol_sc) + Phaser(self.TBC_FREQ).emit(max_vol_sc)
         amp_mul = 0.8 / np.max(np.abs(max_vol))
 

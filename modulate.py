@@ -87,9 +87,10 @@ def modulate():
         dft = np.zeros(C.P.dft_size)
 
         for inx, bit in enumerate(data):
-            dft[C.P.bin_spacings[inx]] = bit * C.P.DFT_AMP_MUL
+            scale = C.P.DFT_BIN_MULT * C.rng.choice([-1,1])
+            dft[C.P.bin_spacings[inx]] = bit * scale
 
-        signal = U.ttf(dft, samples)  # + tbc.emit(samples)
+        signal = U.ttf(dft, samples) + tbc.emit(samples)
         yield signal * C.P.DFT_AMP_MUL
 
 
