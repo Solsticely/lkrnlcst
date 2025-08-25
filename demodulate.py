@@ -14,10 +14,6 @@ def low_pass_filter(data, freq, hz):
     return U.ttf(F, data.size)
 
 
-def get_time_difference():
-    pass
-
-
 def speed_warp(samples, speed):
     warp_samples = []
     sample_offset = 0
@@ -29,8 +25,51 @@ def speed_warp(samples, speed):
     return np.array(warp_samples, dtype=C.TY)
 
 
+# TODO: add an intermediate step to normalise volume
+def read_data(hz, stream):
+    CHUNK_SAMPSIZE = round(hz * C.P.MIN_FREQTIME)
+    
+    # stream = time_base_correct(hz, stream)
+    stream = U.SlidingReader(stream, CHUNK_SAMPSIZE, CHUNK_SAMPSIZE)
+
+    bin_bounds = [U.hz2bin(i, CHUNK_SAMPSIZE, hz) for i in C.P.freq_bounds]
+    value_thres = C.P.DFT_BIN_MULT * C.P.DFT_AMP_MUL / 2
+
+    bin_c = ((len(C.P.bin_spacings) >> 1) << 1) - 2
+    bits = 0
+    bit_c = 0
+    final = b""
+    t_bit_c = 0
+
+    for chunk in stream:
+        try:
+            dft = U.afft(chunk)
+        except ValueError:
+            break
+
+        bins = []
+
+        for i in range(bin_c):
+            bin_value = np.sum(dft[bin_bounds[i] : bin_bounds[i + 1]])
+            bins.append(bin_value)
+
+        for a, b in [tuple(bins[i : i + 2]) for i in range(bin_c)[::2]]:
+            is_high = 1 if a < b else 0
+            bits = (bits << 1) | is_high
+            bit_c += 1
+            if bit_c == 8:
+                final += int.to_bytes(bits)
+                bit_c, bits = 0, 0
+
+    final += int.to_bytes(bits)
+    print(final)
+    for i in final:
+        if i < 128:
+            print(end=int.to_bytes(i).decode("ascii"))
+    print()
+
+
 def time_base_correct(hz, file):
-    # TODO: make sure TBC also does amplitude normalisation!!!
     expected_freq = C.P.TBC_FREQ
     WIN_SIZE = C.WIN_SIZE
     # NOTE: keep in mind that the standard window roll is C.WIN_SIZE-C.WIN_ROFF
@@ -80,10 +119,12 @@ if __name__ == "__main__":
 
     total_time = 0
     before = time.time()
-    with U.WaveWriter(C.AUD_OUT_PATH, C.AUD_SAMPWIDTH, hz) as outfile:
-        for i in time_base_correct(hz, file):
-            total_time += len(i)/hz
-            outfile.write(i)
+    # with U.WaveWriter(C.AUD_OUT_PATH, C.AUD_SAMPWIDTH, hz) as outfile:
+    #     for i in time_base_correct(hz, file):
+    #         total_time += len(i)/hz
+    #         outfile.write(i)
+
+    read_data(file.hz, file)
 
     elapsed = time.time() - before
     print("Processed %.1f seconds of audio in %.1f seconds (%.2f×)" % (total_time, elapsed, total_time/elapsed))

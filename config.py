@@ -62,7 +62,7 @@ class Profile:
         self.WIN_SIZE = round(self.MIN_FREQTIME * HZ)
 
         # minimum DFT bin spacing when encoding
-        self.DFT_BIN_DELTA = 3
+        self.DFT_BIN_DELTA = 2
         self.DFT_BIN_DELTA_MULT = 0  # 0.05
         # actual spacing is calculated as:
         # last_freq * DELTA_MULT + bin2hz(hz2bin(last_freq) + DELTA)

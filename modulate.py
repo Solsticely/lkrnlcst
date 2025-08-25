@@ -35,6 +35,7 @@ def read_aud_in_as_chunks():
     assert math.log2(C.P.FM_BASE)-math.floor(math.log2(C.P.FM_BASE)+.0001) < .0001, "FM data modulation base is not a power of two"
     chunk_bits = round(math.log2(C.P.FM_BASE))
 
+    # TODO: make this streaming
     all = None
     with open(C.DAT_IN_PATH, "rb").detach() as file:
         all = file.readall()
@@ -44,8 +45,9 @@ def read_aud_in_as_chunks():
     # as_chunks = [sum([i[j] * 2**j for j in range(chunk_bits)]) for i in as_groups]
     as_chunks = [int("".join(str(j) for j in i), 2) for i in as_groups]
     as_floats = [i/(C.P.FM_BASE-1) for i in as_chunks]
+    with_alternates = [j for i in as_floats for j in [1-i, i]]
 
-    return as_floats
+    return with_alternates
 
 
 def sweep():
@@ -72,7 +74,7 @@ def modulate():
     duration = C.P.MIN_FREQTIME * C.HZ
     duration_accumulator = duration
 
-    yield sweep()
+    # yield sweep()
 
     tbc = Phaser(C.P.TBC_FREQ)
     clock = False
@@ -83,7 +85,7 @@ def modulate():
 
         samples = round(duration_accumulator)
         duration_accumulator += duration - samples
-        data = [chunks.next() for i in range(len(C.P.bin_spacings)-2)] + [c_amp, 1-c_amp]
+        data = [chunks.next() for i in range(len(C.P.bin_spacings)//2*2-2)] + [c_amp, 1-c_amp]
         dft = np.zeros(C.P.dft_size)
 
         for inx, bit in enumerate(data):

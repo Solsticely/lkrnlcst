@@ -378,13 +378,18 @@ def guess_freq(block: np.ndarray, hz: float, default_if_error: float):
 
 
 def remove_dft_noise(
-    dft: np.ndarray, target_bin_low: int, target_bin_high: int, strength: float
+    dft: np.ndarray, target_bin_low: int, target_bin_high: int, strength: float,
+    strength_is_magnitude: bool = False
 ):
     # separate sign & magnitude. to be joined later
     dft_sgn, dft_abs = np.sign(dft), np.abs(dft)
 
     # remove noise
-    dft_abs -= np.median(dft_abs[target_bin_low:target_bin_high]) * strength
+    if strength_is_magnitude:
+        dft_abs -= strength
+    else:
+        dft_abs -= np.median(dft_abs[target_bin_low:target_bin_high]) * strength
+
     dft_abs = np.maximum(dft_abs, 0)
 
     # rejoin sign & magnitude
