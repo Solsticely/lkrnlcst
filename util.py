@@ -28,34 +28,13 @@ def make_rolling_mask(window_size: int, offset_size: int):
     )
 
 
-# TODO: this is a very slow function
-def zip_streams(parent, *children, regular_block_size=None):
-    def dummy_generator(size=C.WIN_SIZE):
-        while True:
-            yield np.zeros(size)
+def zip_streams(parent, *children):
+    children = list(children)
+    children = [StreamEeater(child) for child in children]
 
-    # Handle regular block-sizes!
-    if regular_block_size is not None:
-        dummy_gen = dummy_generator(regular_block_size)
-        return (i[1:] for i in zip_streams(dummy_gen, parent, *children))
-
-    residues = [np.array([], C.TY) for i in children]
-    dummy_gens = [dummy_generator() for i in children]
     for block in parent:
         block_size = len(block)
-        child_blocks = []
-
-        for inx, child in enumerate(children):
-            while residues[inx].size < block_size:
-                try:
-                    residues[inx] = np.append(residues[inx], child.__next__())
-                except StopIteration:
-                    children[inx] = dummy_gens[inx]
-                    print(
-                        "WARN: Child", inx, child, "stopped generating before parent!"
-                    )
-            child_blocks.append(residues[inx][:block_size])
-            residues[inx] = residues[inx][block_size:]
+        child_blocks = [child.take(block_size) for child in children]
 
         yield (block, *child_blocks)
 
