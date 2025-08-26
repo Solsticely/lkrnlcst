@@ -50,7 +50,7 @@ def read_aud_in_as_chunks():
     return with_alternates
 
 
-def sweep():
+def training_sweep():
     # Generates a sine sweep that increases exponentially
     DURATION_SECS = 0.5
     START_HZ = C.P.TOTAL_MINHZ
@@ -68,13 +68,82 @@ def sweep():
     return np.sin(b * np.exp(a * t) - b)
 
 
+def training_frequency_bias():
+    GOAL_LENGTH = .25
+    CYCLE_COUNTS = round(GOAL_LENGTH * C.P.TBC_FREQ)
+    LENGTH = round(CYCLE_COUNTS / C.P.TBC_FREQ * C.HZ)
+    return Phaser(C.P.TBC_FREQ).emit(LENGTH)
+
+
+def training_freq_profile():
+    SAMPLES = round(C.P.MIN_FREQTIME * C.HZ)
+    dft = np.zeros(C.P.dft_size)
+    for i in C.P.bin_spacings:
+        sgn = C.rng.choice([-1,1])
+        dft[i] = sgn * C.P.DFT_BIN_MULT
+
+    audio = U.ttf(dft, SAMPLES) + Phaser(C.P.TBC_FREQ).emit(SAMPLES)
+    return audio * C.P.DFT_AMP_MUL
+
+
+def training_noise():
+    SAMPLES = round(C.P.MIN_FREQTIME * C.HZ)
+    dft = np.zeros(C.P.dft_size)
+    low = U.hz2bin(C.P.TOTAL_MINHZ, SAMPLES, C.HZ)
+    hi = U.hz2bin(C.P.TOTAL_MAXHZ, SAMPLES, C.HZ)
+    for i in range(low, hi+1):
+        dft[i] = C.rng.choice([-1,1])
+
+    audio = U.ttf(dft, SAMPLES) + Phaser(C.P.TBC_FREQ).emit(SAMPLES)
+    audio *= .8 / np.max(np.abs(audio))
+    return audio
+
+
+def training_magic():
+    SAMPLES = round(C.P.MIN_FREQTIME * C.HZ)
+    dft1 = np.zeros(C.P.dft_size)
+    dft2 = np.zeros(C.P.dft_size)
+    for i in C.P.bin_spacings[::2]:
+        sgn = C.rng.choice([-1,1])
+        dft1[i] = sgn * C.P.DFT_BIN_MULT
+
+    for i in C.P.bin_spacings[1::2]:
+        sgn = C.rng.choice([-1,1])
+        dft2[i] = sgn * C.P.DFT_BIN_MULT
+
+    audio1 = U.ttf(dft1, SAMPLES)
+    audio2 = U.ttf(dft2, SAMPLES)
+
+    audio = np.append(audio1,audio2)
+    audio = np.concat((audio, audio, audio))
+    
+    audio = audio + Phaser(C.P.TBC_FREQ).emit(len(audio))
+    return audio * C.P.DFT_AMP_MUL
+
+
+def training_intro():
+    return np.concat((
+        np.zeros(4*C.P.WIN_SIZE, dtype=C.TY),
+        training_frequency_bias(),
+        np.zeros(4*C.P.WIN_SIZE, dtype=C.TY),
+        training_sweep(),
+        np.zeros(4*C.P.WIN_SIZE, dtype=C.TY),
+        training_noise(),
+        np.zeros(4*C.P.WIN_SIZE, dtype=C.TY),
+        training_freq_profile(),
+        np.zeros(4*C.P.WIN_SIZE, dtype=C.TY),
+        training_magic(),
+        np.zeros(4*C.P.WIN_SIZE, dtype=C.TY),
+    ))
+
+
 def modulate():
     chunks = read_aud_in_as_chunks()
     chunks = U.ChunkEater(chunks, 0)
     duration = C.P.MIN_FREQTIME * C.HZ
     duration_accumulator = duration
 
-    # yield sweep()
+    yield training_intro()
 
     tbc = Phaser(C.P.TBC_FREQ)
     clock = False
@@ -108,12 +177,16 @@ def main():
     elapsed = time.time()-before
     filesize = os.path.getsize(C.DAT_IN_PATH)
     lin_filesize = os.path.getsize("./linux.dat")
-    bytes_per_second = filesize/total_time
+    training_intro_time = len(training_intro()) / C.HZ
+    bytes_per_second = filesize/(total_time - training_intro_time)
 
     print("Generated %.1f seconds of audio in %.1f seconds (%.2f×)" % (total_time, elapsed, total_time/elapsed))
     print("Approx min/MiB: %.1f" % (1024**2/60/bytes_per_second))
     print("Approx baud: %.1f bit/s, approx storage efficiency: %.1fKiB/s" % (bytes_per_second*8, bytes_per_second/1024))
     print("Approx final C-number w/ linux: C-%.0f (mins) \u00b1 wow&flutter & speed misconfiguration & ends" % (lin_filesize/bytes_per_second/60))
+    print()
+    print("Baud-based measures don't count the length of training intro (%.1fs)" % (training_intro_time))
+    print("PRNG state: %s" % (hex(int.from_bytes(C.rng.randbytes(16)))))
 
 
 if __name__ == "__main__":
