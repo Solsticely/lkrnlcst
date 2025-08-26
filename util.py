@@ -280,6 +280,39 @@ class StreamSplitter:
         return new_block
 
 
+class StreamEater:
+    def __init__(self, inner):
+        self.inner = inner
+        self.inner_is_open = True
+        self.left = np.array([], dtype=C.TY)
+
+    def take(self, amt):
+        if amt is None:
+            amt = len(self.left)
+
+        while len(self.left) < amt and self.inner_is_open:
+            try:
+                data = self.inner.__next__()
+                self.left = np.append(self.left, data)
+            except StopIteration:
+                self.inner_is_open = False
+
+        # Pad with zeros
+        output = self.left[:amt]
+        if len(output) != amt:
+            output = np.append(output, np.zeros(amt - len(output), dtype=C.TY))
+
+        return output
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.left:
+            return self.take(None)
+        return self.inner.__next__()
+
+
 lerp = (lambda t, a, b: (b-a)*t+a)
 
 
