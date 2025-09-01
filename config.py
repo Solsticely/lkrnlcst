@@ -54,16 +54,16 @@ class Profile:
         # 37.5 milliseconds minimum +- wow & flutter error
         # self.MIN_FREQTIME = max((1+self.TBC_ERR_AMT)*.0375, self.MIN_FREQTIME)
 
-        # rounded up to a whole # of windows + a boundary of 1ms, for
-        # convenience's sake (and for ability to test what happens when wow &
-        # flutter makes windows fall between chunks)
-        self.MIN_FREQTIME = math.ceil(self.MIN_FREQTIME / (WIN_SIZE/HZ))*(WIN_SIZE/HZ) + 0.002
+        # rounded up to a whole # of windows, for convenience's sake (and for
+        # ability to test what happens when wow & flutter makes windows fall
+        # between chunks)
+        self.MIN_FREQTIME = math.ceil(self.MIN_FREQTIME / (WIN_SIZE/HZ))*(WIN_SIZE/HZ)
 
         self.WIN_SIZE = round(self.MIN_FREQTIME * HZ)
 
+        # -- Do DFT spacing calculations --
         # minimum DFT bin spacing when encoding
         self.DFT_BIN_DELTA = 2
-        self.DFT_BIN_DELTA_MULT = 0  # 0.05
         # actual spacing is calculated as:
         # last_freq * DELTA_MULT + bin2hz(hz2bin(last_freq) + DELTA)
         # and rounded to nearest bin during actual encoding & decoding
