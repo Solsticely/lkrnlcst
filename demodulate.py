@@ -26,7 +26,7 @@ def speed_warp(samples, speed):
 
 
 def read_noise_level(hz: int, stream: U.StreamEater):
-    THRESHOLD = 1.1  # 110% of baseline noise level
+    THRESHOLD = 1.05  # 110% of baseline noise level
     ADDED_THRESHOLD = 10**-10  # -100 dbfs
     NOISE_TAKE_SIZE = round(C.P.WIN_SIZE / C.HZ * hz)
     # Take noise level
@@ -68,7 +68,7 @@ def skip_to_amplitude(
             break
 
     if do_print:
-        print("Guessing that data starts at %.2fs in the audio sample" % total_duration)
+        print("Guessing that data starts at %.5fs in the audio sample" % total_duration)
 
 
 def read_header(hz: int, stream: U.StreamEater):
@@ -107,7 +107,7 @@ def read_header(hz: int, stream: U.StreamEater):
 def read_data(hz, stream):
     CHUNK_SAMPSIZE = round(hz * C.P.MIN_FREQTIME)
 
-    # TODO: precede with a dc-bias removal step
+    stream = U.remove_dc_bias(hz, stream, C.P.TOTAL_MINHZ)
     stream = U.StreamEater(stream)
 
     header = read_header(hz, stream)

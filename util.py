@@ -28,6 +28,24 @@ def make_rolling_mask(window_size: int, offset_size: int):
     )
 
 
+def remove_dc_bias(hz: int, stream, target_low_freq: float):
+    win_size = round(hz / target_low_freq)
+    roll_size = win_size // 18
+    print(win_size, roll_size)
+
+    stream = SlidingReader(stream, win_size, roll_size, pad=True)
+    bias_gen = None
+
+    for chunk in stream:
+        bias = np.average(chunk)
+        if bias_gen is None:
+            bias_gen = SlidingWriter(
+                stream.basic_mask, stream.basic_mask_beginning, roll_size, bias
+            )
+
+        yield chunk[:roll_size] - bias_gen.write(bias)
+
+
 def zip_streams(parent, *children):
     children = list(children)
     children = [StreamEeater(child) for child in children]
