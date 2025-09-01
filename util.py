@@ -262,22 +262,23 @@ class StreamSplitter:
 class StreamEater:
     def __init__(self, inner):
         self.inner = inner.__iter__()
-        self.inner_is_open = True
+        self.is_finished = False
         self.left = np.array([], dtype=C.TY)
 
     def take(self, amt):
         if amt is None:
             amt = len(self.left)
 
-        while len(self.left) < amt and self.inner_is_open:
+        while len(self.left) < amt and not self.is_finished:
             try:
                 data = self.inner.__next__()
                 self.left = np.append(self.left, data)
             except StopIteration:
-                self.inner_is_open = False
+                self.is_finished = True
 
         # Pad with zeros
         output = self.left[:amt]
+        self.left = self.left[amt:]
         if len(output) != amt:
             output = np.append(output, np.zeros(amt - len(output), dtype=C.TY))
 
@@ -290,7 +291,7 @@ class StreamEater:
         return self
 
     def __next__(self):
-        if self.left:
+        if len(self.left) != 0:
             return self.take(None)
         return self.inner.__next__()
 
