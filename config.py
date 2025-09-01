@@ -31,12 +31,10 @@ class Profile:
     def __init__(self):
         # frequency modulation will have base FM_BASE, and can encode from 0 to FM_BASE
         self.FM_BASE = 2
-        # TODO: as per new observations, MINHZ should be moved up to 500,
-        # and TBC_ERR_AMT should be reduced to ~3%
-        self.TOTAL_MINHZ = 200
+        self.TOTAL_MINHZ = 500
         self.TOTAL_MAXHZ = 11000
         # allow 10% error by wow&flutter and battery voltage.
-        self.TBC_ERR_AMT = .09
+        self.TBC_ERR_AMT = .03
         
         # Since writing is the operation that limits min and max frequencies,
         # we can forego adding a boundary to the top of the TBC frequency, as
