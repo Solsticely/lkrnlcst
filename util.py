@@ -283,6 +283,25 @@ class StreamEater:
 
         return output
 
+    def take_back(self, data: np.ndarray):
+        """
+            Adds data back into the stream, to be returned next time take is
+            called.
+
+            If the stream's state is as follows:
+            |------------|-----------------------|
+            | taken data | unread part of stream |
+            |------------|-----------------------|
+            ^ read head
+
+            data fed into this function alters the state into:
+            |+++++++++++++++++++|------------|-----------------------|
+            | newly pushed data | taken data | unread part of stream |
+            |+++++++++++++++++++|------------|-----------------------|
+            ^ new read head
+        """
+        self.left = np.concat((self.left[:0], data, self.left))
+
     def __iter__(self):
         return self
 
