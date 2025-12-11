@@ -314,7 +314,7 @@ class StreamEater:
         return self.inner.__next__()
 
 
-lerp = (lambda t, a, b: (b-a)*t+a)
+def lerp(t, a, b): return (b-a)*t+a
 
 
 # fft.size = data.size//2+1
@@ -363,7 +363,11 @@ def find_peak_freq(data, hz, default_if_silent=None):
     return bin2hz(index, a_dat2dftsz(len(data)), hz)
 
 
-def speed_adjust(data, speed):
+# TODO: speed this up using np.cumsum and np.interp
+def speed_adjust(data, speed, approx=False):
+    if approx:
+        return speed_adjust_approx(data, speed[0], speed[-1])
+
     if type(speed) is int:
         speed = np.ones_like(data) * speed
 
@@ -379,6 +383,37 @@ def speed_adjust(data, speed):
         index += round(whole)
 
     return np.array(final, dtype=data.dtype)
+
+
+def speed_adjust_approx(data: np.ndarray, speed_at_start: float, speed_at_end: float):
+    slope = speed_at_end - speed_at_start
+    height = speed_at_start
+
+    if slope == 0:
+        len_factor_of_result = 1/height
+    else:
+        len_factor_of_result = math.log(1+slope/height)/slope
+    len_of_result = round(len(data)*len_factor_of_result)
+
+    data_time_steps = np.linspace(0,1,len(data))
+
+    playback_time_steps = np.linspace(0,1,len_of_result)
+    if slope == 0:
+        time_steps = playback_time_steps
+    else:
+        time_steps = (height/slope)*(np.exp(slope*playback_time_steps)-1)
+    
+    speed_adjusted = np.interp(time_steps, data_time_steps, data)
+
+    return speed_adjusted
+
+
+def speed_adjust_const(data: np.ndarray, speed: float):
+    new_sample_count = round(len(data) / speed)
+    new_sample_indexes = np.linspace(0, 1, new_sample_count)
+    old_sample_indexes = np.linspace(0, 1, len(data))
+    speed_adjusted = np.interp(new_sample_indexes, old_sample_indexes, data)
+    return speed_adjusted
 
 
 def bandpass(data, hz, low: None, high: None, data_is_dft=False):
