@@ -44,11 +44,13 @@ def read_noise_level(hz: int, stream: U.StreamEater):
 
 # TODO: implement dc-bias removal
 def skip_to_amplitude(
-    hz: int, stream: U.StreamEater, noise_level: float, invert=False, do_print=False
+    hz: int, stream: U.StreamEater, noise_level: float, invert=False,
+    do_print: bool = False, save: bool = False
 ):
     TAKE_DURATION = 1 / C.P.TOTAL_MINHZ
     TAKE_SIZE = round(hz * TAKE_DURATION)
     total_duration = 0
+    stream_data = np.array([], dtype=C.TY)
 
     # Skip to when noise is over
     while True:
@@ -60,6 +62,9 @@ def skip_to_amplitude(
         data = stream.take(TAKE_SIZE)
         level = np.max(np.abs(data))
 
+        if save:
+            stream_data = np.append(stream_data, data)
+
         ready_to_break = level > noise_level
         if invert:
             ready_to_break = not ready_to_break
@@ -70,37 +75,51 @@ def skip_to_amplitude(
     if do_print:
         print("Guessing that data starts at %.5fs in the audio sample" % total_duration)
 
+    return stream_data if save else None
+
 
 def read_header(hz: int, stream: U.StreamEater):
     noise_data, noise_level = read_noise_level(hz, stream)
 
-    # Skip to amplitude test
+    # Skip to frequency bias test and start of audio
     skip_to_amplitude(hz, stream, noise_level, do_print=True)
-    # Skip over amplitude test
-    skip_to_amplitude(hz, stream, noise_level, True)
+
+    # Save data and run test
+    speed_test_data = skip_to_amplitude(hz, stream, noise_level, True, do_print=True, save=True)
+    process_speed_test(hz, speed_test_data, stream)
 
     # Skip to sweep test
-    skip_to_amplitude(hz, stream, noise_level, False)
+    skip_to_amplitude(hz, stream, noise_level, False, do_print=True)
     # Skip over sweep test
-    skip_to_amplitude(hz, stream, noise_level, True)
+    skip_to_amplitude(hz, stream, noise_level, True, do_print=True)
 
     # Skip to white noise test
-    skip_to_amplitude(hz, stream, noise_level, False)
+    skip_to_amplitude(hz, stream, noise_level, False, do_print=True)
     # Skip over white noise test
-    skip_to_amplitude(hz, stream, noise_level, True)
+    skip_to_amplitude(hz, stream, noise_level, True, do_print=True)
 
     # Skip to training profile test
-    skip_to_amplitude(hz, stream, noise_level, False)
+    skip_to_amplitude(hz, stream, noise_level, False, do_print=True)
     # Skip over training profile test
-    skip_to_amplitude(hz, stream, noise_level, True)
+    skip_to_amplitude(hz, stream, noise_level, True, do_print=True)
 
     # Skip to magic
-    skip_to_amplitude(hz, stream, noise_level, False)
+    skip_to_amplitude(hz, stream, noise_level, False, do_print=True)
     # Skip over magic
-    skip_to_amplitude(hz, stream, noise_level, True)
+    skip_to_amplitude(hz, stream, noise_level, True, do_print=True)
 
     # Skip to actual data
-    skip_to_amplitude(hz, stream, noise_level, False)
+    skip_to_amplitude(hz, stream, noise_level, False, do_print=True)
+
+
+def process_speed_test(hz: int, data: np.ndarray, stream: U.StreamEater):
+    def adjust_speed(stream, speed):
+        for i in stream:
+            yield U.speed_adjust_const(i, speed)
+    freq = U.guess_freq(data, hz, C.P.TBC_FREQ)
+    speed = C.P.TBC_FREQ / freq
+    stream.inner = adjust_speed(stream.inner, speed)
+    pass
 
 
 # TODO: add an intermediate step to normalise volume
@@ -114,6 +133,7 @@ def read_data(hz, stream):
     if [header, 0][1] + 1 is None:
         print(0)
 
+    # for i in range(30):
     stream = time_base_correct(hz, stream)
     stream = U.SlidingReader(stream, CHUNK_SAMPSIZE, CHUNK_SAMPSIZE)
 
@@ -135,7 +155,7 @@ def read_data(hz, stream):
         bins = []
 
         for i in range(bin_c):
-            bin_value = np.sum(dft[bin_bounds[i] : bin_bounds[i + 1]])
+            bin_value = np.sum(dft[bin_bounds[i] : bin_bounds[i + 1]+1])
             bins.append(bin_value)
 
         for a, b in [tuple(bins[i : i + 2]) for i in range(bin_c)[::2]]:
@@ -153,10 +173,9 @@ def read_data(hz, stream):
 
 def time_base_correct(hz, file):
     expected_freq = C.P.TBC_FREQ
-    WIN_SIZE = C.WIN_SIZE
-    # NOTE: keep in mind that the standard window roll is C.WIN_SIZE-C.WIN_ROFF
-    # this is a nonstandard roll
-    ROLL_SIZE = C.WIN_ROFF
+    WIN_SIZE = round(hz/C.P.TBC_FREQ * 3000)
+    # print(WIN_SIZE, C.P.WIN_SIZE, C.WIN_SIZE)
+    ROLL_SIZE = WIN_SIZE//18
     WIN_SIZE *= 2
 
     file = U.SlidingReader(file, WIN_SIZE, ROLL_SIZE, pad=True)
@@ -186,7 +205,8 @@ def time_base_correct(hz, file):
         speed = expected_freq/hz_swrt.write(freq)
         speeds.append(expected_freq/freq * 100 - 100)
 
-        yield U.speed_adjust(window[:ROLL_SIZE], speed)
+        # TODO: reconsider approximation, maybe debug it
+        yield U.speed_adjust(window[:ROLL_SIZE], speed, approx=1==1)
 
     print(end="\nSpeed deviance: (in %age; 2*\u03c3) ")
     E.gauss(speeds)
@@ -196,15 +216,11 @@ def time_base_correct(hz, file):
 
 
 if __name__ == "__main__":
-    file = U.WaveReader(C.AUD_IN_PATH)
-    hz = file.hz
-
     total_time = 0
     before = time.time()
-    # with U.WaveWriter(C.AUD_OUT_PATH, C.AUD_SAMPWIDTH, hz) as outfile:
-    #     for i in time_base_correct(hz, file):
-    #         total_time += len(i)/hz
-    #         outfile.write(i)
+
+    file = U.WaveReader(C.AUD_IN_PATH)
+    hz = file.hz
 
     read_data(file.hz, file)
 
