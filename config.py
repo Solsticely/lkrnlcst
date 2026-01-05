@@ -133,6 +133,71 @@ class Profile:
 
 P = Lazy(Profile)
 
+class ErrorCorrection:
+    def __init__(self):
+        # Galois field properties
+        from galois2 import Galois2
+        from galois import GaloisPN
+        import mathutils as M
+        self.GF_PRIME = P.FM_BASE
+
+        assert self.GF_PRIME == 2, "Only binary error correction implemented"
+        # size NEEDS to match conway polynomial
+        self.GF_SIZE = 409
+
+        gf_tuple = (self.GF_PRIME, self.GF_SIZE)
+        if gf_tuple == (2,409):
+            self.CONWAY_POLY = 0b10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010101001
+        elif gf_tuple == (2,96):
+            self.CONWAY_POLY = 0b1000000000000000000000000000000001011100001000100010100010010001100010001101111011110101111011101
+        elif gf_tuple == (2,64):
+            self.CONWAY_POLY = 0b10000000000000000000000000000001001000111111101000011110010110111
+        elif gf_tuple == (2,32):
+            self.CONWAY_POLY = 0b100000000000000110010100010101111
+        elif gf_tuple == (2,16):
+            self.CONWAY_POLY = 0b10000000000101101
+        elif gf_tuple == (2,8):
+            self.CONWAY_POLY = 0b100011101
+        elif gf_tuple == (3,8):
+            self.CONWAY_POLY = 100210222
+        else:
+            raise NotImplementedError("Need to change conway polynomial!")
+            # For a great list see:
+            # https://www.math.rwth-aachen.de/~Frank.Luebeck/data/ConwayPol/index.html
+
+        if self.GF_PRIME == 2:
+            self.gf = Galois2(self.GF_SIZE, self.CONWAY_POLY)
+        elif 3 <= self.GF_PRIME <= 10:
+            self.CONWAY_POLY = [int(i) for i in str(self.CONWAY_POLY)][::-1]
+            self.gf = GaloisPN(self.GF_PRIME, self.GF_SIZE, self.CONWAY_POLY)
+        else:
+            assert False, "how?"
+            
+        # Error correction properties
+        # Interleaving count describes how many different encoded chunks should
+        # be interleaved (for burst error resiliency)
+        self.INTERLEAVING_COUNT = 4
+        # How much error should be corrected?
+        ACCEPTABLE_ERROR_RATE = 1/16
+
+        # Reed-Solomon code properties
+        # Block size
+        # self.rs_msg_sz = self.GF_PRIME ** self.GF_SIZE - 1
+        self.rs_blk_sz = len(P.bin_spacings)
+        self.rs_msg_sz = round(math.floor(self.rs_blk_sz/(ACCEPTABLE_ERROR_RATE+1)))
+        assert self.rs_msg_sz > 2
+        self.rs_seq_pows = [self.gf.alpha() ** i for i in range(self.rs_blk_sz)]
+        self.rs_seq_pow_pows = [[i**j for j in range(self.rs_msg_sz)] for i in self.rs_seq_pows]
+        self.rs_max_err_sz = (self.rs_blk_sz - self.rs_msg_sz) >> 1
+        
+        self.poly = M.DynPoly(self.gf.zero(), self.gf.one())
+
+        self.rs_gao_poly = self.poly.one()
+        for i in self.rs_seq_pows:
+            self.rs_gao_poly *= self.poly.new([-i, self.gf.one()])
+        
+E = Lazy(ErrorCorrection)
+
 
 class Distortion:
     # allow 10% random change in distortion config every run
