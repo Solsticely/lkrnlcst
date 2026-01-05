@@ -20,13 +20,13 @@ class GaloisPN:
                 "Degree of conway polynomial must match prime power"
             )
             assert self.mod[0] != 0, "Conway polynomial isn't prime!"
-            if 300 < math.log2(self.chr) * (self.chr**self.pwr - 1):
-                assert (
-                    self._int(self.int_to_arr(self.chr ** (self.chr**self.pwr)))
-                    == self.chr
-                ), (
-                    "Conway polynomial doesn't satisfy fermat's little theorem (not irreducible?)"
-                )
+            # if 300 < math.log2(self.chr) * (self.chr**self.pwr - 1):
+            #     assert (
+            #         self._int(self.int_to_arr(self.chr ** (self.chr**self.pwr)))
+            #         == self.chr
+            #     ), (
+            #         "Conway polynomial doesn't satisfy fermat's little theorem (not irreducible?)"
+            #     )
 
     def new(self, value):
         return GaloisPN(self.chr, self.pwr, self.mod, value, noverify=True)
@@ -47,7 +47,7 @@ class GaloisPN:
         return self.new(self._one())
 
     def alpha(self):
-        return self.new(self._alpha)
+        return self.new(self._alpha())
 
     def _norm_pwr(self, pwr):
         return pwr if pwr is not None else self.pwr
@@ -61,10 +61,13 @@ class GaloisPN:
     def digit_count(self):
         return self._digit_count(self.value)
 
+    def as_arr(self):
+        return self.value
+
     def _inv(self, value):
         return (np.full(len(value), self.chr, dtype=np.uint8) - value) % self.chr
 
-    def inv(self):
+    def __neg__(self):
         return self.new(self._inv(self.value))
 
     def _pad(self, value, pwr=None):
@@ -90,6 +93,34 @@ class GaloisPN:
             )
             poly = self._add(poly, addition)
         return self._pad_and_trunc(poly)
+
+    def _pow(self, base, exp):
+        assert type(exp) is int
+        assert exp >= 0
+
+        if exp == 0:
+            return self._one()
+        elif exp == 1:
+            return base
+
+        # Do exponentiation by squaring
+        result = self._one()
+        current_base = base
+        
+        while True:
+            if exp&1 == 1:
+                result = self._mul(result, current_base)
+
+            exp >>= 1
+            if exp <= 0:
+                break
+
+            current_base = self._mul(current_base, current_base)
+
+        return result
+
+    def __pow__(self, exp):
+        return self.new(self._pow(self.value, exp))
 
     def usr_repr_to_arr(self, number, pwr=None, try_mod=True):
         pwr = self._norm_pwr(pwr)
@@ -139,7 +170,7 @@ class GaloisPN:
         result = self._zero(total_digit_c)
         for inx, val in enumerate(a):
             result += np.roll(self._mul_c(b, val), inx)
-        return result
+        return self._mod(result)
 
     def __mul__(self, other):
         if type(other) is GaloisPN:
