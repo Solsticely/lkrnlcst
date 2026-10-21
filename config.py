@@ -143,7 +143,7 @@ class ErrorCorrection:
 
         assert self.GF_PRIME == 2, "Only binary error correction implemented"
         # size NEEDS to match conway polynomial
-        self.GF_SIZE = 409
+        self.GF_SIZE = 32
 
         gf_tuple = (self.GF_PRIME, self.GF_SIZE)
         if gf_tuple == (2,409):
