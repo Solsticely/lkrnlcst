@@ -48,7 +48,22 @@ class Galois2:
         return self.new(self._mult_inv(self.value))
 
     def __truediv__(self, other):
+        # We're not going to implement galois / integer division
         return self.new(self._mul(self.value, self._mult_inv(other.value)))
+
+    def __rtruediv__(self, other):
+        # this operation is other/self
+        # integer / galois division is equivalent to (1/denom) * numer, which
+        # in base 2 is equivalent to 1/denom if numer is even, else 0
+        if isinstance(other, Galois2):
+            if other.value == 1:
+                return self.new(self._mult_inv(self.value))
+            elif other.value == 0:
+                return self.zero()
+            else:
+                return self.new(self._mul(self._mult_inv(self.value), other.value))
+        else:
+            return self.new(self._mult_inv(self.value) if other&1 else 0)
 
     def _extended_gcd(self, a, b):
         r0, r1 = a, b
