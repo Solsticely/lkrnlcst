@@ -1,8 +1,56 @@
 import config as C
 import util as U
 from tqdm import tqdm
-import math
-import mathutils as M
+import numpy as np
+# import math
+# import mathutils as M
+
+# Tuning considerations:
+# Type I cassette tape SNR source: https://en.wikipedia.org/wiki/Compact_Cassette_tape_types_and_formulations
+# ~57 to 60 dBA. We'll go for 54 dBA
+
+# ECC design:
+# The resulting data is modulated in *pages*. Each page is an n×m matrix of bits (trits?)
+# Each row of the page is a message encoded using reed-solomon-coding.
+#
+# The spectrogram looks like
+#
+# SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS··· <- Sync signal
+#
+# AAaAaAaAaA=aAaaaAAAAA=aAaAaAAAaA=AaAaAaaaAAA=AaaAaAaAAAa=AaAaAaAaAa=aaAAAAAaa··· <- Data lines
+# BBBBbbBbBb=BBBbBbBbBb=bBbbbBBBBB=bBBBbBbBbBb=bbbBBBBBbbB=BbBBBbBbBb=BbBbBbbbB··· <-
+# cCcCCCcCcC=cCcCcCcccC=CCCccCcCcC=CcCcCcCcCcc=CCCCCccCCCc=cCcCcCcCcc=cCCCCCccc··· <-
+# DDdDdDdDdD=dDdddDDDDD=ddDdDdDDDd=dDdDdDdDdDD=DDddDdDDDDd=dDdDdDdDdd=dDDDDDddD··· <-
+# ··········=··········=··········=···········=···········=··········=············ <-
+# \--------/ \--------/ ···
+#   page 1     page 2
+
+# Blip:
+#   --SSSSS--
+#      Bias/Sync frequency
+#   =-AAaAa-= =-BbBBb-= =-CcCCc-= =-dDdDd-= etc
+#      Reed-solomon messages
+#   ----=----
+#      Page boundary
+
+# Each reed solomon message being a *row* as opposed to a column helps make recovery
+# possible if one whole column gets corrupted. # TODO: maybe we can interleave
+# pages too, to make pagegroups/books like CD/DVD CIRC coding, to help with burst
+# whole-column errors.
+
+# Since data is stored column-by-column, we need to further stripe the data (stripe
+# as in how RAID storage does it) to pass to the modem. So the final data would be
+# passed like --====ABcDAbCdAbCdAbCDaBcD====ABcD-- as opposed to --=AaAaaA=BbBbbB=--
+
+# def encode(file) -> np.ndarray:
+#     yield np.array() # TODO: Implement this
+
+# def encode_page(data: np.ndarray) -> np.ndarray:
+#     return data # TODO: Implement this
+
+# def decode_page(columns: np.ndrray) -> np.ndarray:
+#     return
+# TODO: re-design the ecc functions
 
 def encode(instream: U.ChunkEater):
     assert C.E.GF_PRIME == 2, "Only binary error correction supported for now"
