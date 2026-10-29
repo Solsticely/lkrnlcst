@@ -75,6 +75,7 @@ class Profile:
         self.freq_spacings = np.array([bin2hz(i, self.dft_size, HZ) for i in self.bin_spacings], dtype=TY)
         self.freq_bounds = np.array([bin2hz(i, self.dft_size, HZ) for i in self.bin_bounds], dtype=TY)
         self.bin_bounds = [int(i) for i in self.bin_bounds]
+        self.bin_count = len(self.bin_spacings)
 
         # What to multiply DFT amplitude by
         self.DFT_BIN_MULT = .5
@@ -143,7 +144,8 @@ class ErrorCorrection:
 
         assert self.GF_PRIME == 2, "Only binary error correction implemented"
         # size NEEDS to match conway polynomial
-        self.GF_SIZE = 32
+        self.GF_SIZE = 8
+        # Alphabet size is GF_PRIME ** GF_SIZE
 
         gf_tuple = (self.GF_PRIME, self.GF_SIZE)
         if gf_tuple == (2,409):
@@ -183,6 +185,7 @@ class ErrorCorrection:
         # Reed-Solomon code properties
         # Block size
         # self.rs_msg_sz = self.GF_PRIME ** self.GF_SIZE - 1
+        # DEPRECATED!
         self.rs_blk_sz = len(P.bin_spacings)
         self.rs_msg_sz = round(math.floor(self.rs_blk_sz/(ACCEPTABLE_ERROR_RATE+1)))
         assert self.rs_msg_sz > 2
@@ -195,9 +198,21 @@ class ErrorCorrection:
         self.rs_gao_poly = self.poly.one()
         for i in self.rs_seq_pows:
             self.rs_gao_poly *= self.poly.new([-i, self.gf.one()])
-        
+
 E = Lazy(ErrorCorrection)
 
+class EccBitstream:
+    def __init__(self):
+        ERROR_RATE = 1/16
+
+        self.rs_blk_size: int = E.GF_PRIME ** E.GF_SIZE - 1
+        self.rs_msg_size: int = round(self.rs_blk_size / (ERROR_RATE+1) - .5)
+
+        self.page_row_count: int = P.bin_count - 2
+        self.page_col_count: int = self.rs_blk_size
+        self.empty_page_col: np.ndarray = np.zeros(self.page_row_count)
+
+B = Lazy(EccBitstream)
 
 class Distortion:
     # allow 10% random change in distortion config every run
