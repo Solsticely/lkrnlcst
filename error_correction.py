@@ -82,48 +82,45 @@ def encode_interleave_pages(instream: U.ChunkEater) -> np.ndarray:
         yield column
 
 def decode_interleave_pages(columns: U.ChunkEater) -> np.ndarray:
+    # TODO: Interleave pages, see other TODO comment under blip
     for message in decode_page(columns):
         yield message
 
-def encode_page(instream: U.ChunkEater) -> np.ndarray:
-    # TODO: OPTIMISE: SLOW: use a 2D numpy table and just use column views instead
-    # TODO: WET: Merge with decode_page somehow?
-    rows: list[np.ndarray] = []
-
-    # One RS block per row
-    for blk_inx in range(C.B.page_row_count):
-        rows.append(encode_message(instream))
-
-    for row in rows:
-        assert len(row) == C.B.page_col_count
-
-    for col_inx in range(C.B.page_col_count):
-        column = np.ndarray(C.B.page_row_count, dtype=np.uint16) # TODO: review dtypes
-        for row_inx, row in enumerate(rows):
-            column[row_inx] = row[col_inx]
-
-        if col_inx == 0: breakpoint()
+def encode_page(rows: U.ChunkEater) -> np.ndarray:
+    for column in page_codec(rows, True):
         yield column
 
-def decode_page(columns_: U.ChunkEater) -> np.ndarray:
-    # TODO: OPTIMISE: SLOW: use a 2D numpy table and just use column views instead
-    # TODO: WET: Merge with encode_page somehow?
-    column_count: int = C.B.rs_blk_size
-    columns: list[np.ndarray] = []
+def decode_page(columns: U.ChunkEater) -> np.ndarray:
+    for row in page_codec(columns, False):
+        yield row
 
-    for col_inx in range(column_count):
-        columns.append(columns_.next())
+def page_codec(data: U.ChunkEater, is_encoding: bool) -> np.ndarray:
+    """
+        Merged implementation of page encoding and coding.
 
-    for column in columns:
-        assert len(column) == C.B.page_row_count
+        Since both page encoding and decoding offload actual reed-solomon processing
+        to encode_message or decode_message respectively, the operation taking place
+        in this function is a very simple table transposition.
+    """
+    # Variable naming convention: Role of variable in decoding is first
+    shape = [C.B.page_col_count, C.B.page_row_count]
+    if is_encoding:
+        shape = shape[::-1]
+    cols_or_rows: np.ndarray = np.ndarray(shape, dtype=np.uint16) # TODO: review dtypes
 
-    for row_inx in range(C.B.page_row_count):
-        row = np.ndarray(C.B.page_col_count, dtype=np.uint16)  # TODO: review dtypes
-        for col_inx, col in enumerate(columns):
-            row[col_inx] = column[row_inx]
-        if row_inx == 0: breakpoint()
-        yield decode_message(row)
-    
+    for col_or_row_inx in range(shape[0]):
+        if not is_encoding:
+            cols_or_rows[col_or_row_inx] = data.next()
+        else:
+            cols_or_rows[col_or_row_inx] = encode_message(data)
+
+    for col_or_row in cols_or_rows:
+        assert len(col_or_row) == shape[1]
+
+    # TODO: do column rolling/unrolling
+
+    for row_or_col_inx, row_or_col in enumerate(np.transpose(cols_or_rows)):
+        yield decode_message(row_or_col) if not is_encoding else row_or_col
 
 def encode_message(instream: U.ChunkEater) -> np.ndarray:
     # TODO: do reed-solomon encoding
@@ -138,85 +135,41 @@ def decode_message(message: np.ndarray) -> np.ndarray:
     assert len(message) == C.B.rs_blk_size
     return message[:C.B.rs_msg_size]
 
-# def encode_page(data: np.ndarray) -> np.ndarray:
-#     return data # TODO: Implement this
+def bytes_to_bits(data: bytes) -> list[int]:
+    out = []
+    for i in data:
+        out.extend(int(i) for i in "%08d"%int(bin(i)[2:]))
+    return out
 
-# def decode_page(columns: np.ndrray) -> np.ndarray:
-#     return
-# TODO: re-design the ecc functions
+def bits_to_bytes(data: list[int]) -> bytes:
+    # MSB first
+    out = b""
+    residue = ""
+    for i in data:
+        assert 0<=i<=1
+        assert isinstance(i,int)
+        residue += str(i)
+        while len(residue) >= 8:
+            out += int(residue[:8],2).to_bytes()
+            residue = residue[8:]
 
-# def encode(instream: U.ChunkEater):
-#     assert C.E.GF_PRIME == 2, "Only binary error correction supported for now"
-#     while not instream.is_eof:
-#         # TODO: implement interleaving encoded chunks
-#         for galois_element in encode_reed(instream):
-#             for digit in galois_element.as_arr():
-#                 yield digit
+    if len(residue) != 0:
+        print(f"WARNING: Extra residue bits when converting bits to bytes: {residue}")
 
-# def encode_chunk(data: U.ChunkEater) -> list:
-#     # This function returns a list of prime coefficients as a numpy list
-#     # list<galois_symbol<GF(p)>>
-
-#     # TODO: this is very unoptimised
-#     # chunks = [for sublist in zip(*[encode_reed(data) for i in range(C.E.rs_msg_sz)]) for i in sublist]
-#     return np.array([j for i in chunks for j in i], dtype=np.uint8)
-
-# def encode_reed(data: U.ChunkEater) -> list:
-#     # This function returns a list of gf symbols as numpy lists
-#     # list<galois_symbol<GF(p**k)>>
-    
-#     input = [] # This is a polynomial.
-#     for i in range(C.E.rs_msg_sz):
-#         symbol = [data.next() for i in range(C.E.GF_SIZE)]
-#         input.append(C.E.gf.new(symbol))
-
-#     codeword = []
-#     for i in range(C.E.rs_blk_sz):
-#         token = C.E.gf.zero()
-#         for j in range(C.E.rs_msg_sz):
-#             token += C.E.rs_seq_pow_pows[i][j] * input[j]
-#         codeword.append(token)
-#     return codeword
-
-# def decode(instream: U.ChunkEater):
-#     while not instream.is_eof:
-#         yield decode_chunk(instream)
-
-# def decode_chunk(instream: U.ChunkEater):
-#     elements = []
-#     for i in range(C.E.rs_blk_sz):
-#         digits = [data.next() for i in range(C.E.GF_SIZE)]
-#         elements.append(C.E.gf.new(digits))
-
-#     # TODO: implement chunk deinterlacing! Should be simple with a basic codeword = chunk[n::int_count]
-#     codeword = elements
-#     return decode_reed(codeword)
-
-# def decode_reed(code: list) -> list:
-#     # https://web.archive.org/web/20120712150304/http://www.math.clemson.edu/~sgao/papers/RS.pdf
-#     lagrange = C.E.poly.lagrange(list(zip(C.E.rs_seq_pows, (C.E.gf.new(i) for i in code))))
-#     stop_deg = (C.E.rs_blk_sz+C.E.rs_msg_sz)/2
-#     gcd, _gao_u, gao_v = C.E.rs_gao_poly.gcd(lagrange, stop_deg)
-#     quot, rem = gcd.divmod(gao_v)
-#     if rem != C.E.poly.zero() and quot.degree() < C.E.rs_msg_sz:
-#         raise "Too many errors occured in block!"
-
-#     return quot + [0]*(C.E.rs_msg_len-len(quot))
+    return out
 
 if __name__ == "__main__":
-    
-    bytes = b"i get mad whenever i see the self driving car from sanfrancisco"
-    data = []
+    sourcebytes = b"i get mad whenever i see the self driving car from sanfrancisco! "
+    assert bits_to_bytes(bytes_to_bits(sourcebytes)) == sourcebytes
+
+    data = bytes_to_bits(sourcebytes)
     columns = []
-    for i in bytes:
-        data += [int(i) for i in bin(i)[2:]]
     data *= 3
     print("Encoding %d bits of data" % (len(data)))
 
-    encoded_page = encode_page(U.ChunkEater(data, 0))
-    decoded_page = decode_page(U.ChunkEater(encoded_page, C.B.empty_page_col))
+    # encoded_page = encode_page(U.ChunkEater(data, 0))
+    # decoded_page = decode_page(U.ChunkEater(encoded_page, C.B.empty_page_col))
 
-    print([*decoded_page])
     # print(decode_message(encode_message(U.ChunkEater(data, 0))))
 
     count = 0
@@ -227,18 +180,23 @@ if __name__ == "__main__":
     duration = count * C.P.WIN_SIZE/C.HZ
     print("Encoded %d pages, equating to %.2fs of audio" % (count, duration))
     print(f"Target density: {'%.2f'%(len(data)/1024/duration)}Kib/s (kibibit)")
-
+    # print(columns)
     newdata = []
     for i in decode(U.ChunkEater(columns, C.B.empty_page_col)):
         newdata.extend((int(j) for j in i))
 
-    newbytes = b''
-    for i in range(len(data)//8):
-        bits = int(''.join(str(i) for i in newdata[8*i:8*i+8]),2)
+    newbytes = bits_to_bytes(newdata).rstrip(b"\0")
 
     print("Decode result:")
     print(repr(newbytes))
     print("Expected:")
-    print(repr(bytes))
-        
-    # print()
+    print(repr(sourcebytes))
+
+    src_data = U.ChunkEater(sourcebytes,0)
+    encoded_data = [*encode_interleave_pages(src_data)]
+    # print(encoded_data, columns)
+    # assert encoded_data == columns
+    encoded_data = U.ChunkEater(encoded_data, C.B.empty_page_col)
+    decoded_data = decode_interleave_pages(encoded_data)
+    decoded_data = bytes([byte for col in list(decoded_data) for byte in col])
+    print(decoded_data.rstrip(b"\0"))
