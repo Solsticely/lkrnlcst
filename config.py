@@ -137,8 +137,8 @@ P = Lazy(Profile)
 class ErrorCorrection:
     def __init__(self):
         # Galois field properties
-        from galois2 import Galois2
-        from galois import GaloisPN
+        from galois2n import Galois2N
+        from galoispn import GaloisPN
         import mathutils as M
         self.GF_PRIME = P.FM_BASE
 
@@ -168,7 +168,7 @@ class ErrorCorrection:
             # https://www.math.rwth-aachen.de/~Frank.Luebeck/data/ConwayPol/index.html
 
         if self.GF_PRIME == 2:
-            self.gf = Galois2(self.GF_SIZE, self.CONWAY_POLY)
+            self.gf = Galois2N(self.GF_SIZE, self.CONWAY_POLY)
         elif 3 <= self.GF_PRIME <= 10:
             self.CONWAY_POLY = [int(i) for i in str(self.CONWAY_POLY)][::-1]
             self.gf = GaloisPN(self.GF_PRIME, self.GF_SIZE, self.CONWAY_POLY)

@@ -1,4 +1,4 @@
-class Galois2:
+class Galois2N:
     def __init__(self, power, conway, value=0, noverify=False):
         self.pwr = power
         self.mask = (1<<self.pwr)-1
@@ -18,7 +18,7 @@ class Galois2:
             #     )
 
     def new(self, value):
-        return Galois2(self.pwr, self.mod, value, noverify=True)
+        return Galois2N(self.pwr, self.mod, value, noverify=True)
 
     def zero(self):
         return self.new(0)
@@ -55,7 +55,7 @@ class Galois2:
         # this operation is other/self
         # integer / galois division is equivalent to (1/denom) * numer, which
         # in base 2 is equivalent to 1/denom if numer is even, else 0
-        if isinstance(other, Galois2):
+        if isinstance(other, Galois2N):
             if other.value == 1:
                 return self.new(self._mult_inv(self.value))
             elif other.value == 0:
@@ -137,7 +137,7 @@ class Galois2:
         return result
 
     def _norm_usr_in(self, inp):
-        if type(inp) is Galois2:
+        if type(inp) is Galois2N:
             return inp.value
         elif type(inp) is int:
             return inp&self.mask
@@ -166,7 +166,7 @@ class Galois2:
         return result if nomod else self._mod(result)
 
     def __mul__(self, other):
-        if type(other) is Galois2:
+        if type(other) is Galois2N:
             return self.new(self._mul(self.value, other.value))
         else:
             return self.new(self.value if other&1 else 0)
@@ -178,5 +178,5 @@ class Galois2:
         return self.value
 
     def __repr__(self):
-        return "Galois2(%d).new(%d)" % (self.pwr, self)
+        return "Galois2N(%d).new(%d)" % (self.pwr, self)
 
