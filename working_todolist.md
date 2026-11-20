@@ -8,8 +8,8 @@ state.
 
 Error correction is the current focus.
 
-1. Import the `galois` package (need to rename `galois.py`. maybe rename `galois.py`
-   to `galoispn.py` for GF(p^n)).
+1. ~~Import the `galois` package (need to rename `galois.py`. maybe rename
+   `galois.py` to `galoispn.py` for GF(p^n)).~~
 2. Implement RS/BCH ECC code in the error_correction package.
 3. Connect error_correction to modulate/demodulate.
 4. Use requirements.txt, write simple devenv setup code in bash

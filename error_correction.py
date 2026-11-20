@@ -2,6 +2,10 @@ import config as C
 import util as U
 from tqdm import tqdm
 import numpy as np
+import galois
+
+_unused = [galois]
+
 # import math
 # import mathutils as M
 
