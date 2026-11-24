@@ -2,9 +2,6 @@ import config as C
 import util as U
 from tqdm import tqdm
 import numpy as np
-import galois
-
-_unused = [galois]
 
 # import math
 # import mathutils as M
@@ -69,7 +66,14 @@ _unused = [galois]
 # as in how RAID storage does it) to pass to the modem. So the final data would be
 # passed like --====ABcDAbCdAbCdAbCDaBcD====ABcD-- as opposed to --=AaAaaA=BbBbbB=--
 
+# def reed_solomon_encoder(instream: U.ChunkEater) -> U.ChunkEater:
+#     def generator(instream: U.ChunkEater):
+#         while not instream.is_eof:
+
+#     return U.ChunkEater(generator(instream), C.B.empty_page_row)
+
 def encode(instream: U.ChunkEater) -> np.ndarray:
+    # instream = reed_solomon_encoder(instream)
     while not instream.is_eof:
         for column in encode_interleave_pages(instream):
             yield column
@@ -82,6 +86,7 @@ def decode(columns: U.ChunkEater) -> np.ndarray:
 # Encodes a book, which is a series of pages whose columns are interleaved
 def encode_interleave_pages(instream: U.ChunkEater) -> np.ndarray:
     # TODO: Interleave pages, see other TODO comment under blip
+    # TODO: make a shared interleave function that interleaves inputs with stride n
     for column in encode_page(instream):
         yield column
 
@@ -127,55 +132,88 @@ def page_codec(data: U.ChunkEater, is_encoding: bool) -> np.ndarray:
         yield decode_message(row_or_col) if not is_encoding else row_or_col
 
 def encode_message(instream: U.ChunkEater) -> np.ndarray:
-    # TODO: do reed-solomon encoding
-    data = np.zeros(C.B.rs_blk_size, dtype=np.uint8)  # TODO: review dtypes
-    for i in range(C.B.rs_msg_size):
-        data[i] = instream.next()
+    msg_len = C.B.rs_msg_size * C.B.rs_alphabet_bitcount
+    msg = np.ndarray(msg_len, dtype=np.uint8)  # TODO: review dtypes
+    for i in range(len(msg)):
+        msg[i] = instream.next()
+    msg = bits_to_bytes(msg, C.B.rs_alphabet_bitcount, False)
+    # TODO: write with numpy
+    row = list(C.B.rs.encode(msg))
+    assert len(row) == C.B.rs_blk_size
+    row = np.array(bytes_to_bits(row, C.B.rs_alphabet_bitcount), dtype=np.uint8) # TODO: review dtypes
+    assert len(row) == C.B.page_col_count
 
-    return data # TODO: fix
+    return row
 
-def decode_message(message: np.ndarray) -> np.ndarray:
-    # TODO: do reed-solomon error correction
-    assert len(message) == C.B.rs_blk_size
-    return message[:C.B.rs_msg_size]
+def decode_message(block: np.ndarray) -> np.ndarray:
+    msg_len = C.B.rs_msg_size * C.B.rs_alphabet_bitcount
+    if C.B.disable_ecc:
+        return block[:msg_len]
+    assert len(block) == C.B.page_col_count
+    block = bits_to_bytes(block, C.B.rs_alphabet_bitcount, False)
+    msg = C.B.rs.decode(block)
+    assert len(msg) == C.B.rs_msg_size
+    msg = bytes_to_bits(msg, C.B.rs_alphabet_bitcount)
+    assert len(msg) == msg_len
+    return msg
 
-def bytes_to_bits(data: bytes) -> list[int]:
+def bytes_to_bits(data: bytes | list[int], bits_per_symbol: int=8) -> list[int]:
+    # MSB first
+    assert bits_per_symbol > 0
+    format_str = "%0"+str(bits_per_symbol)+"d"
     out = []
     for i in data:
-        out.extend(int(i) for i in "%08d"%int(bin(i)[2:]))
+        out.extend(int(i) for i in format_str%int(bin(i)[2:]))
     return out
 
-def bits_to_bytes(data: list[int]) -> bytes:
+def bits_to_bytes(data: list[int], bits_per_symbol: int=8, as_bytes: bool = True) -> list[int]:
     # MSB first
-    out = b""
+    assert bits_per_symbol > 0
+    if as_bytes:
+        assert bits_per_symbol <= 8
+    out = []
     residue = ""
     for i in data:
         assert 0<=i<=1
-        assert isinstance(i,int)
+        # assert isinstance(i,int)
         residue += str(i)
-        while len(residue) >= 8:
-            out += int(residue[:8],2).to_bytes()
+        while len(residue) >= bits_per_symbol:
+            out.append(int(residue[:8],2))
             residue = residue[8:]
 
     if len(residue) != 0:
-        print(f"WARNING: Extra residue bits when converting bits to bytes: {residue}")
+        print(f"WARNING: Extra residue bits when grouping bits: {residue}")
 
+    return bytes(out) if as_bytes else out
+
+def interleave(data: list, stride: int) -> list:
+    # TODO: write with numpy (reshape -> transpose -> reshape)
+    if stride == 1: return data
+    assert stride > 1
+    assert len(data)%stride == 0, "Interleaving operation will result in ungrouped excess"
+    interleave_count = len(data)//stride
+    out = [None]*len(data)
+    for offset in range(stride):
+        for index in range(interleave_count):
+            out[index + offset * interleave_count] = data[index * stride + offset]
+
+    assert None not in out
     return out
+    
 
 if __name__ == "__main__":
+    # Set to 2, 3, 4 for fast decoding, set to -1 for fast iteration
+    opt_level = -1
+    C.warm_up(opt_level)
+
     sourcebytes = b"i get mad whenever i see the self driving car from sanfrancisco! "
-    assert bits_to_bytes(bytes_to_bits(sourcebytes)) == sourcebytes
 
     data = bytes_to_bits(sourcebytes)
     columns = []
-    data *= 3
+    data *= 1 # Increase to 1024-8192 if you want to benchmark
+
+    # Encode
     print("Encoding %d bits of data" % (len(data)))
-
-    # encoded_page = encode_page(U.ChunkEater(data, 0))
-    # decoded_page = decode_page(U.ChunkEater(encoded_page, C.B.empty_page_col))
-
-    # print(decode_message(encode_message(U.ChunkEater(data, 0))))
-
     count = 0
     for i in tqdm(encode(U.ChunkEater(data, 0))):
         columns.append(i)
@@ -184,23 +222,43 @@ if __name__ == "__main__":
     duration = count * C.P.WIN_SIZE/C.HZ
     print("Encoded %d pages, equating to %.2fs of audio" % (count, duration))
     print(f"Target density: {'%.2f'%(len(data)/1024/duration)}Kib/s (kibibit)")
-    # print(columns)
+
+    # Corrupt
+    # chance to corrupt this column
+    CORRUPT_COL_CHANCE = 0.01
+    # chance to corrupt this row
+    CORRUPT_ROW_CHANCE = 0.30
+    print(end="\nCorrupting codepoints")
+    for col_inx, col in enumerate(columns):
+        if C.rng.random()>CORRUPT_COL_CHANCE:
+            continue
+        for row_inx, row in enumerate(col):
+            if C.rng.random()>CORRUPT_ROW_CHANCE:
+                continue
+            # print(end=f" {col_inx},{row_inx}")
+            columns[col_inx][row_inx] ^= 1
+    print('\n')
+
+    # Decode
     newdata = []
-    for i in decode(U.ChunkEater(columns, C.B.empty_page_col)):
+    print("Decoding")
+    for i in tqdm(decode(U.ChunkEater(columns, C.B.empty_page_col))):
         newdata.extend((int(j) for j in i))
 
-    newbytes = bits_to_bytes(newdata).rstrip(b"\0")
-
+    newbytes = bits_to_bytes(newdata)
+    
     print("Decode result:")
-    print(repr(newbytes))
+    print(repr(newbytes[:len(sourcebytes)]))
     print("Expected:")
     print(repr(sourcebytes))
 
-    src_data = U.ChunkEater(sourcebytes,0)
-    encoded_data = [*encode_interleave_pages(src_data)]
+    # src_data = U.ChunkEater(bytes_to_bits(sourcebytes),0)
+    # encoded_data = [*encode_interleave_pages(src_data)]
     # print(encoded_data, columns)
     # assert encoded_data == columns
-    encoded_data = U.ChunkEater(encoded_data, C.B.empty_page_col)
-    decoded_data = decode_interleave_pages(encoded_data)
-    decoded_data = bytes([byte for col in list(decoded_data) for byte in col])
-    print(decoded_data.rstrip(b"\0"))
+    # encoded_data = U.ChunkEater(encoded_data, C.B.empty_page_col)
+    # decoded_data = decode_interleave_pages(encoded_data)
+    # decoded_data = bytes([byte for col in list(decoded_data) for byte in col])
+    # decoded_data = bits_to_bytes(decoded_data)
+    # print(decoded_data.rstrip(b"\0"))
+    # assert bits_to_bytes(bytes_to_bits(sourcebytes, 7), 7) == sourcebytes

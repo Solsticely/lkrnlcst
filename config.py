@@ -1,5 +1,6 @@
 import numpy as np
 import random as rng
+import os
 from lazy import Lazy
 import math
 
@@ -199,18 +200,75 @@ class ErrorCorrection:
         for i in self.rs_seq_pows:
             self.rs_gao_poly *= self.poly.new([-i, self.gf.one()])
 
-E = Lazy(ErrorCorrection)
+E = Lazy(ErrorCorrection) # DEPRECATED!
+
+opt_level: int = 0
 
 class EccBitstream:
     def __init__(self):
+        import galois
         ERROR_RATE = 1/16
 
+        # Do not correct errors
+        self.disable_ecc: bool = {None:False,"0":False,"1":True}[os.environ["LKRNLCST_NOECC"]]
+
+        # Reed solomon settings
         self.rs_blk_size: int = E.GF_PRIME ** E.GF_SIZE - 1
         self.rs_msg_size: int = round(self.rs_blk_size / (ERROR_RATE+1) - .5)
+        # We're using an erasure code here.
+        # Block sizes are rounded up to a power of two minus one, since pypi.galois
+        # only implements reed solomon codes in successive powers of two.
+        self.rs_alphabet_bitcount: int = round(math.log2(self.rs_blk_size)+.5)
+        actual_rs_blk_size: int = (1<<self.rs_alphabet_bitcount) - 1
+        self.rs_distance: int = self.rs_blk_size - self.rs_msg_size + 1
+        # Warm up galois field.
+        # TODO: set up optimisation settings where we replace python-calculate with
+        # jit-lookup or even jit-calculate for devices that are efficient enough.
+        # breakpoint()
+        compile_mode = {0: 'python-calculate',1:'jit-calculate',2:'jit-lookup'}[min(opt_level,2)]
+        self.gf: galois.GF = galois.GF(2, self.rs_alphabet_bitcount, compile=compile_mode)
+        self.rs: galois.ReedSolomon = galois.ReedSolomon(actual_rs_blk_size, d=self.rs_distance)
+        assert self.rs.field is self.gf
 
+        # Wire format settings
         self.page_row_count: int = P.bin_count - 2
-        self.page_col_count: int = self.rs_blk_size
+        self.page_col_count: int = self.rs_blk_size * self.rs_alphabet_bitcount
         self.empty_page_col: np.ndarray = np.zeros(self.page_row_count)
+        self.empty_page_row: np.ndarray = np.zeros(self.page_col_count)
+
+
+def set_opt_level(new: int) -> None:
+    global opt_level
+    assert new in [-3,-2,-1,0,1,2,3,4]
+    if new < 0:
+        os.environ["NUMBA_DISABLE_JIT"] = "1"
+        new = -new-1
+    if new > 3:
+        os.environ["NUMBA_OPT"] = "max"
+    else:
+        os.environ["NUMBA_OPT"] = str(new)
+    # os.environ["NUMBA_DEBUG_CACHE"] = "1"
+    opt_level = new
+
+
+def warm_up(new_opt_level: int) -> None:
+    set_opt_level(new_opt_level)
+    print(f"Warming up...\nOptimisation level: {opt_level}/3")
+    unused = []
+    
+    print("Loading Galois Package...")
+    import galois
+    unused.append(galois)
+    
+    print("Building Reed-Solomon galois field...")
+    unused.append(B.page_row_count)
+
+    print("Compiling (w/numba) Reed-Solomon codec functions...")
+    unused.append(B.rs.decode(B.rs.encode(np.zeros(B.rs_msg_size,dtype=np.uint8)))) # TODO: rethink dtypes
+
+    print("DONE Warming up!",str(unused)[0][:0])
+    print()
+
 
 B = Lazy(EccBitstream)
 
